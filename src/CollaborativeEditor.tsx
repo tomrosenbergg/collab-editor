@@ -24,17 +24,19 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
+    // Random user color for cursor awareness
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-    // Persist full binary state to DB
+     // Save to DB (debounced) 
     const saveToDatabase = debounce(() => {
       provider.saveStateToSupabase(supabase, documentId)
         .then(({ error }) => {
-          if (!error) console.log('Binary state saved')
+          if (!error) console.log('Binary state saved to DB')
+          else console.error('Save error:', error)
         })
     }, 2000)
 
@@ -48,44 +50,79 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
     doc.on('update', onUpdate)
 
     const initLoad = async () => {
-  await new Promise(resolve => setTimeout(resolve, 2000));
+      // 1. Handshake: Give peers 2 seconds to respond with live data [cite: 34]
+      await new Promise(resolve => setTimeout(resolve, 2000))
 
-  if (receivedPeerData || ytext.toString().length > 0) {
-    doc.off('update', onUpdate);
-    return;
-  }
-
-  setStatus('Loading from DB...');
-  const { data, error } = await supabase
-    .from('documents')
-    .select('content')
-    .eq('id', documentId)
-    .single();
-
-  if (error) {
-    console.error('Fetch Error:', error);
-    setStatus('Error loading document');
-  } else if (data?.content) {
-    try {
-      // Ensure the data is wrapped in a Uint8Array
-      const binaryUpdate = new Uint8Array(data.content);
-      
-      // Safety check: Don't apply if the array is empty or too small
-      if (binaryUpdate.length > 0) {
-        Y.applyUpdate(doc, binaryUpdate, 'initial-db-load');
-        setStatus('Loaded from DB');
-      } else {
-        setStatus('New Document');
+      if (receivedPeerData || ytext.toString().length > 0) {
+        doc.off('update', onUpdate)
+        return 
       }
-    } catch (e) {
-      console.error('Yjs Decoding Error:', e);
-      setStatus('Corrupted document state');
+
+      // 2. Fallback: Load from Database
+      setStatus('Loading from DB...')
+      const { data, error } = await supabase
+        .from('documents')
+        .select('content')
+        .eq('id', documentId)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Fetch Error:', error)
+        setStatus('Error loading document')
+      } else if (data?.content) {
+        try {
+          let rawContent = data.content
+          
+          // --- ROBUST DECODING START ---
+          
+          // Case A: Postgres Bytea Hex String (e.g., "\x010203...")
+          if (typeof rawContent === 'string') {
+            // Remove '\x' prefix if present
+            const hex = rawContent.startsWith('\\x') 
+              ? rawContent.slice(2) 
+              : rawContent
+
+            // Ensure valid hex before parsing
+            if (/^[0-9a-fA-F]*$/.test(hex)) {
+               const match = hex.match(/.{1,2}/g)
+               if (match) {
+                 rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
+               } else {
+                 rawContent = new Uint8Array([])
+               }
+            } else {
+               // Fallback: Try parsing as JSON string (edge case)
+               try {
+                  const parsed = JSON.parse(rawContent)
+                  if (Array.isArray(parsed)) rawContent = new Uint8Array(parsed)
+               } catch (e) {
+                  console.warn('Content string is neither Hex nor JSON array')
+               }
+            }
+          } 
+          // Case B: Standard Array (e.g. from JSONB column or legacy save)
+          else if (Array.isArray(rawContent)) {
+             rawContent = new Uint8Array(rawContent)
+          }
+
+          // --- ROBUST DECODING END ---
+
+          // Apply the binary update to Y.Doc if valid
+          if (rawContent instanceof Uint8Array && rawContent.length > 0) {
+            Y.applyUpdate(doc, rawContent, 'initial-db-load')
+            setStatus('Loaded from DB')
+          } else {
+            setStatus('New Document')
+          }
+        } catch (e) {
+          console.error('Yjs Decoding Error:', e)
+          setStatus('Corrupted data format')
+        }
+      } else {
+        setStatus('New Document')
+      }
+      doc.off('update', onUpdate)
     }
-  } else {
-    setStatus('New Document');
-  }
-  doc.off('update', onUpdate);
-};
 
     initLoad()
 

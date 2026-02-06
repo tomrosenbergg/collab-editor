@@ -16,6 +16,7 @@ export class SupabaseProvider {
 
     this.channel
       .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
+        // Payload comes in as an array of numbers from the broadcast
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
@@ -29,7 +30,8 @@ export class SupabaseProvider {
            this.channel.send({
              type: 'broadcast',
              event: 'sync-update',
-             payload: Array.from(update)
+             // Broadcasts must use standard arrays (JSON compatible)
+             payload: Array.from(update) 
            })
         }
       })
@@ -76,20 +78,27 @@ export class SupabaseProvider {
     return this.awareness.getStates().size > 1
   }
 
-  // Persists the full binary state to Supabase
-async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
-  // Use encodeStateAsUpdate to get the full document history
-  const state = Y.encodeStateAsUpdate(this.doc);
-  
-  // Explicitly convert to a standard Array for storage 
-  // (Postgres bytea accepts byte arrays via the JS driver)
-  const payload = Array.from(state);
+  /**
+   * Persists the full Yjs V1 binary state to Supabase using upsert.
+   */
+  async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
+    const state = Y.encodeStateAsUpdate(this.doc)
+    
+    // CRITICAL FIX: Convert Uint8Array to Postgres Hex String (\x...)
+    // This format is required for 'bytea' columns in Postgres.
+    const hex = Array.from(state)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+    
+    const payload = `\\x${hex}`
 
-  return supabase
-    .from('documents')
-    .update({ content: payload })
-    .eq('id', documentId);
-}
+    return supabase
+      .from('documents')
+      .upsert({ 
+        id: documentId, 
+        content: payload 
+      })
+  }
 
   destroy() {
     if (this._resyncInterval) clearInterval(this._resyncInterval)

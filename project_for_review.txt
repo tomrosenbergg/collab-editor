@@ -246,7 +246,7 @@ export class SupabaseProvider {
   channel: RealtimeChannel
   awareness: Awareness
   private _isConnected: boolean = false
-  private _resyncInterval: any
+  private _resyncInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(doc: Y.Doc, supabase: SupabaseClient, channelId: string) {
     this.doc = doc
@@ -255,19 +255,16 @@ export class SupabaseProvider {
 
     this.channel
       .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
-        // Apply updates from others
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
       .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
-        // Update cursors
         const update = new Uint8Array(payload)
         applyAwarenessUpdate(this.awareness, update, 'remote')
       })
       .on('broadcast', { event: 'request-sync' }, () => {
-        // Another user just joined and asked for data.
-        // We send our current document state to them.
         if (this._isConnected) {
+           // Encode current document state as a V1 Update
            const update = Y.encodeStateAsUpdate(doc)
            this.channel.send({
              type: 'broadcast',
@@ -277,13 +274,8 @@ export class SupabaseProvider {
         }
       })
       .subscribe((status) => {
-        console.log('SYSTEM: Realtime Status:', status)
-        
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
-          
-          // HANDSHAKE: Ask other users for their latest state
-          // This fixes the issue where you see old DB data on load
           this.channel.send({
             type: 'broadcast',
             event: 'request-sync',
@@ -292,7 +284,6 @@ export class SupabaseProvider {
         }
       })
 
-    // Broadcast local document changes
     doc.on('update', (update, origin) => {
       if (origin !== 'remote' && this._isConnected) {
         this.channel.send({
@@ -303,7 +294,6 @@ export class SupabaseProvider {
       }
     })
 
-    // Broadcast cursor changes
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
@@ -315,17 +305,35 @@ export class SupabaseProvider {
       })
     })
     
-    // Optional: Periodically ask for sync to ensure consistency (Self-healing)
     this._resyncInterval = setInterval(() => {
         if (this._isConnected && this.awareness.getStates().size <= 1) {
-            // If we think we are alone, ask just in case
             this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
         }
     }, 5000)
   }
 
+  get hasPeers(): boolean {
+    return this.awareness.getStates().size > 1
+  }
+
+  /**
+   * Persists the full Yjs V1 binary state to Supabase using upsert.
+   */
+  async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
+    const state = Y.encodeStateAsUpdate(this.doc)
+    const payload = Array.from(state)
+
+    // Using .upsert ensures the document is created if it doesn't exist
+    return supabase
+      .from('documents')
+      .upsert({ 
+        id: documentId, 
+        content: payload 
+      })
+  }
+
   destroy() {
-    clearInterval(this._resyncInterval)
+    if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
     this.doc.destroy()
     this.awareness.destroy()
@@ -495,7 +503,6 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import debounce from 'lodash/debounce'
 
-// Colors for user cursors
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
 interface Props {
@@ -505,72 +512,99 @@ interface Props {
 
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState('Loading...')
+  const [status, setStatus] = useState('Connecting...')
 
   useEffect(() => {
     const doc = new Y.Doc()
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Random user color for demo purposes
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-    // --- Persistence Logic ---
-    // 1. Create a debounced save function
-    const saveToDatabase = debounce((content: string) => {
-      supabase
-        .from('documents')
-        .update({ content })
-        .eq('id', documentId)
-        .then(() => console.log('Saved to DB'))
+    const saveToDatabase = debounce(() => {
+      provider.saveStateToSupabase(supabase, documentId)
+        .then(({ error }) => {
+          if (!error) console.log('Binary state saved to DB')
+          else console.error('Save error:', error)
+        })
     }, 2000)
 
-    // 2. Fetch initial state (With Delay to prevent duplication)
-    setTimeout(() => {
-      // Check if Yjs already has content (from other users via Realtime)
-      if (ytext.toString().length > 0) {
+    let receivedPeerData = false
+    const onUpdate = (_update: Uint8Array, origin: any) => {
+      if (origin === 'remote') {
+        receivedPeerData = true
         setStatus('Synced from Peer')
-        return // Stop! Don't load from DB, we already have the latest.
+      }
+    }
+    doc.on('update', onUpdate)
+
+    const initLoad = async () => {
+      // 1. Handshake: Give peers 2 seconds to respond with live data
+      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      if (receivedPeerData || ytext.toString().length > 0) {
+        doc.off('update', onUpdate)
+        return 
       }
 
-      // If empty, we are likely the first/only one here. Load from DB.
-      supabase
+      // 2. Fallback: Load from Database
+      setStatus('Loading from DB...')
+      const { data, error } = await supabase
         .from('documents')
         .select('content')
         .eq('id', documentId)
-        .single()
-        .then(({ data, error }) => {
-          if (error) {
-            console.error('Error fetching doc:', error)
-            setStatus('Error loading document')
-            return
+        .maybeSingle() // Prevents error if doc doesn't exist yet
+
+      if (error) {
+        console.error('Fetch Error:', error)
+        setStatus('Error loading document')
+      } else if (data?.content) {
+        try {
+          let rawContent = data.content
+          
+          // Fix for Postgres returning binary data as a hex string (\x...)
+          if (typeof rawContent === 'string') {
+            const hex = rawContent.startsWith('\\x') ? rawContent.slice(2) : rawContent
+            const match = hex.match(/.{1,2}/g)
+            if (match) {
+              rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
+            }
           }
 
-          // Double check: Did text arrive via Realtime while we were fetching?
-          if (doc.getText('codemirror').toString().length === 0) {
-            doc.transact(() => {
-               ytext.insert(0, data?.content || '')
-            })
+          const binaryUpdate = new Uint8Array(rawContent)
+          if (binaryUpdate.length > 0) {
+            // Apply the binary update to our Y.Doc
+            Y.applyUpdate(doc, binaryUpdate, 'initial-db-load')
             setStatus('Loaded from DB')
+          } else {
+            setStatus('New Document')
           }
-        })
-    }, 1000) // Wait 1 second for peers to reply
+        } catch (e) {
+          console.error('Yjs Decoding Error:', e)
+          setStatus('Corrupted data format')
+        }
+      } else {
+        setStatus('New Document')
+      }
+      doc.off('update', onUpdate)
+    }
 
-    // --- Editor Setup ---
+    initLoad()
+
     const state = EditorState.create({
-      doc: ytext.toString(), // Initial empty state, will update when Yjs syncs
+      doc: ytext.toString(),
       extensions: [
         basicSetup,
         javascript(),
-        yCollab(ytext, provider.awareness), // Binds Yjs to CodeMirror
+        yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            saveToDatabase(update.state.doc.toString())
+            saveToDatabase()
           }
         })
       ],
@@ -581,7 +615,6 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // Cleanup
     return () => {
       view.destroy()
       provider.destroy()
@@ -591,7 +624,9 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
 
   return (
     <div>
-      <div style={{ marginBottom: '10px', color: '#666' }}>Status: {status}</div>
+      <div style={{ marginBottom: '10px', color: '#888', fontSize: '0.9em' }}>
+        Status: {status}
+      </div>
       <div 
         ref={editorRef} 
         style={{ border: '1px solid #ccc', minHeight: '400px', textAlign: 'left' }} 
