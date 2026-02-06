@@ -255,6 +255,7 @@ export class SupabaseProvider {
 
     this.channel
       .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
+        // Payload comes in as an array of numbers from the broadcast
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
@@ -264,12 +265,12 @@ export class SupabaseProvider {
       })
       .on('broadcast', { event: 'request-sync' }, () => {
         if (this._isConnected) {
-           // Encode current document state as a V1 Update
            const update = Y.encodeStateAsUpdate(doc)
            this.channel.send({
              type: 'broadcast',
              event: 'sync-update',
-             payload: Array.from(update)
+             // Broadcasts must use standard arrays (JSON compatible)
+             payload: Array.from(update) 
            })
         }
       })
@@ -321,9 +322,15 @@ export class SupabaseProvider {
    */
   async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
     const state = Y.encodeStateAsUpdate(this.doc)
-    const payload = Array.from(state)
+    
+    // CRITICAL FIX: Convert Uint8Array to Postgres Hex String (\x...)
+    // This format is required for 'bytea' columns in Postgres.
+    const hex = Array.from(state)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+    
+    const payload = `\\x${hex}`
 
-    // Using .upsert ensures the document is created if it doesn't exist
     return supabase
       .from('documents')
       .upsert({ 
@@ -519,12 +526,14 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
+    // Random user color for cursor awareness
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
+     // Save to DB (debounced) 
     const saveToDatabase = debounce(() => {
       provider.saveStateToSupabase(supabase, documentId)
         .then(({ error }) => {
@@ -543,7 +552,7 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
     doc.on('update', onUpdate)
 
     const initLoad = async () => {
-      // 1. Handshake: Give peers 2 seconds to respond with live data
+      // 1. Handshake: Give peers 2 seconds to respond with live data [cite: 34]
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       if (receivedPeerData || ytext.toString().length > 0) {
@@ -557,7 +566,7 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
         .from('documents')
         .select('content')
         .eq('id', documentId)
-        .maybeSingle() // Prevents error if doc doesn't exist yet
+        .maybeSingle()
 
       if (error) {
         console.error('Fetch Error:', error)
@@ -566,19 +575,43 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
         try {
           let rawContent = data.content
           
-          // Fix for Postgres returning binary data as a hex string (\x...)
+          // --- ROBUST DECODING START ---
+          
+          // Case A: Postgres Bytea Hex String (e.g., "\x010203...")
           if (typeof rawContent === 'string') {
-            const hex = rawContent.startsWith('\\x') ? rawContent.slice(2) : rawContent
-            const match = hex.match(/.{1,2}/g)
-            if (match) {
-              rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
+            // Remove '\x' prefix if present
+            const hex = rawContent.startsWith('\\x') 
+              ? rawContent.slice(2) 
+              : rawContent
+
+            // Ensure valid hex before parsing
+            if (/^[0-9a-fA-F]*$/.test(hex)) {
+               const match = hex.match(/.{1,2}/g)
+               if (match) {
+                 rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
+               } else {
+                 rawContent = new Uint8Array([])
+               }
+            } else {
+               // Fallback: Try parsing as JSON string (edge case)
+               try {
+                  const parsed = JSON.parse(rawContent)
+                  if (Array.isArray(parsed)) rawContent = new Uint8Array(parsed)
+               } catch (e) {
+                  console.warn('Content string is neither Hex nor JSON array')
+               }
             }
+          } 
+          // Case B: Standard Array (e.g. from JSONB column or legacy save)
+          else if (Array.isArray(rawContent)) {
+             rawContent = new Uint8Array(rawContent)
           }
 
-          const binaryUpdate = new Uint8Array(rawContent)
-          if (binaryUpdate.length > 0) {
-            // Apply the binary update to our Y.Doc
-            Y.applyUpdate(doc, binaryUpdate, 'initial-db-load')
+          // --- ROBUST DECODING END ---
+
+          // Apply the binary update to Y.Doc if valid
+          if (rawContent instanceof Uint8Array && rawContent.length > 0) {
+            Y.applyUpdate(doc, rawContent, 'initial-db-load')
             setStatus('Loaded from DB')
           } else {
             setStatus('New Document')

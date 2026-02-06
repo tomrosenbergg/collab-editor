@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import * as Y from 'yjs'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
-import { javascript } from '@codemirror/lang-javascript'
 import { yCollab } from 'y-codemirror.next'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
@@ -15,23 +14,48 @@ interface Props {
   supabase: SupabaseClient
 }
 
+// Custom Theme to override CodeMirror defaults
+const screenplayTheme = EditorView.theme({
+  "&": {
+    color: "white",
+    backgroundColor: "transparent",
+  },
+  // Hide the gutter (line numbers)
+  ".cm-gutters": {
+    display: "none !important"
+  },
+  // Remove active line highlighting
+  ".cm-activeLine": {
+    backgroundColor: "transparent !important"
+  },
+  ".cm-activeLineGutter": {
+    backgroundColor: "transparent !important"
+  },
+  // Force Cursor to be white
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "white !important"
+  },
+  // Ensure the content area matches the container width
+  ".cm-content": {
+    padding: "0" 
+  }
+})
+
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState('Connecting...')
 
   useEffect(() => {
     const doc = new Y.Doc()
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Random user color for cursor awareness
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-     // Save to DB (debounced) 
+    // Save to DB (debounced)
     const saveToDatabase = debounce(() => {
       provider.saveStateToSupabase(supabase, documentId)
         .then(({ error }) => {
@@ -44,13 +68,15 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
     const onUpdate = (_update: Uint8Array, origin: any) => {
       if (origin === 'remote') {
         receivedPeerData = true
-        setStatus('Synced from Peer')
+        console.log('Synced from Peer')
       }
     }
     doc.on('update', onUpdate)
 
     const initLoad = async () => {
-      // 1. Handshake: Give peers 2 seconds to respond with live data [cite: 34]
+      console.log('Connecting...')
+      
+      // 1. Handshake: Give peers 2 seconds to respond with live data
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       if (receivedPeerData || ytext.toString().length > 0) {
@@ -59,7 +85,7 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       }
 
       // 2. Fallback: Load from Database
-      setStatus('Loading from DB...')
+      console.log('Loading from DB...')
       const { data, error } = await supabase
         .from('documents')
         .select('content')
@@ -68,21 +94,16 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
 
       if (error) {
         console.error('Fetch Error:', error)
-        setStatus('Error loading document')
       } else if (data?.content) {
         try {
           let rawContent = data.content
           
           // --- ROBUST DECODING START ---
-          
-          // Case A: Postgres Bytea Hex String (e.g., "\x010203...")
           if (typeof rawContent === 'string') {
-            // Remove '\x' prefix if present
             const hex = rawContent.startsWith('\\x') 
               ? rawContent.slice(2) 
               : rawContent
 
-            // Ensure valid hex before parsing
             if (/^[0-9a-fA-F]*$/.test(hex)) {
                const match = hex.match(/.{1,2}/g)
                if (match) {
@@ -91,7 +112,6 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
                  rawContent = new Uint8Array([])
                }
             } else {
-               // Fallback: Try parsing as JSON string (edge case)
                try {
                   const parsed = JSON.parse(rawContent)
                   if (Array.isArray(parsed)) rawContent = new Uint8Array(parsed)
@@ -100,26 +120,22 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
                }
             }
           } 
-          // Case B: Standard Array (e.g. from JSONB column or legacy save)
           else if (Array.isArray(rawContent)) {
              rawContent = new Uint8Array(rawContent)
           }
-
           // --- ROBUST DECODING END ---
 
-          // Apply the binary update to Y.Doc if valid
           if (rawContent instanceof Uint8Array && rawContent.length > 0) {
             Y.applyUpdate(doc, rawContent, 'initial-db-load')
-            setStatus('Loaded from DB')
+            console.log('Loaded from DB')
           } else {
-            setStatus('New Document')
+            console.log('New Document (Empty DB Content)')
           }
         } catch (e) {
           console.error('Yjs Decoding Error:', e)
-          setStatus('Corrupted data format')
         }
       } else {
-        setStatus('New Document')
+        console.log('New Document')
       }
       doc.off('update', onUpdate)
     }
@@ -130,7 +146,7 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       doc: ytext.toString(),
       extensions: [
         basicSetup,
-        javascript(),
+        screenplayTheme, // Apply custom visual theme
         yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
@@ -146,6 +162,9 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
+    // Auto-focus the editor immediately
+    view.focus()
+
     return () => {
       view.destroy()
       provider.destroy()
@@ -154,14 +173,9 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   }, [documentId, supabase])
 
   return (
-    <div>
-      <div style={{ marginBottom: '10px', color: '#888', fontSize: '0.9em' }}>
-        Status: {status}
-      </div>
-      <div 
-        ref={editorRef} 
-        style={{ border: '1px solid #ccc', minHeight: '400px', textAlign: 'left' }} 
-      />
-    </div>
+    <div 
+      ref={editorRef} 
+      style={{ textAlign: 'left' }} 
+    />
   )
 }

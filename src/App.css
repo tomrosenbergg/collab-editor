@@ -5,6 +5,40 @@
   text-align: center;
 }
 
+/* --- Editor Styling Updates --- */
+.cm-editor {
+  /* 1. Use 'box-sizing: content-box' to ensure padding doesn't shrink the 55ch width.
+     2. 'width: 55ch' sets the content area to exactly 55 characters wide.
+  */
+  box-sizing: content-box;
+  width: 55ch; 
+  
+  margin: 0 auto;
+  border: none;
+  outline: none;
+  background-color: transparent;
+  
+  /* Ensure the text doesn't touch the very edge of the browser window on small screens */
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+/* We scale the font size up here for readability. */
+.cm-editor .cm-scroller {
+  font-family: 'Courier', 'Courier New', monospace;
+  font-size: 24px; /* Larger, readable size */
+  line-height: 1.2;
+}
+
+/* Ensure the content area matches the container width */
+.cm-content {
+  min-height: 400px;
+  
+  /* Explicitly set the max-width here as well to force the wrap */
+  max-width: 55ch;
+}
+
+/* ... existing logo styles ... */
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -16,17 +50,6 @@
 }
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-.cm-editor {
-  width: 60ch; /* 55 chars + ~5 chars for the line number gutter */
-  margin: 0 auto;
-  border: 1px solid #ccc;
-}
-
-/* Optional: Ensure the font is monospaced so 'ch' is accurate */
-.cm-scroller {
-  font-family: 'Fira Code', 'Courier New', monospace;
 }
 
 @keyframes logo-spin {
@@ -42,12 +65,4 @@
   a:nth-of-type(2) .logo {
     animation: logo-spin infinite 20s linear;
   }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }
