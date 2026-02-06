@@ -1,0 +1,1174 @@
+
+================================================================================
+FILE: tsconfig.node.json
+================================================================================
+
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+
+================================================================================
+FILE: index.html
+================================================================================
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>collab-editor</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+================================================================================
+FILE: tsconfig.app.json
+================================================================================
+
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"]
+}
+
+
+================================================================================
+FILE: package.json
+================================================================================
+
+{
+  "name": "collab-editor",
+  "homepage": "https://tomrosenbergg.github.io/collab-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+"scripts": {
+  "dev": "vite",
+  "build": "tsc && vite build",
+  "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+  "preview": "vite preview",
+  "predeploy": "npm run build",
+  "deploy": "gh-pages -d dist"
+},
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.12",
+    "@supabase/supabase-js": "^2.95.2",
+    "codemirror": "^6.0.2",
+    "lodash": "^4.17.23",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "y-codemirror.next": "^0.3.5",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.29"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "gh-pages": "^6.3.0",
+    "globals": "^16.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4"
+  }
+}
+
+
+================================================================================
+FILE: tsconfig.json
+================================================================================
+
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
+
+
+================================================================================
+FILE: eslint.config.js
+================================================================================
+
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+    },
+  },
+])
+
+
+================================================================================
+FILE: vite.config.ts
+================================================================================
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vitejs.dev/config/
+export default defineConfig(({ command }) => {
+  const config = {
+    plugins: [react()],
+    base: '/', // Default for local development
+  }
+
+  // Only use the sub-path for production builds (GitHub Pages)
+  if (command !== 'serve') {
+    config.base = '/collab-editor/'
+  }
+
+  return config
+})
+
+================================================================================
+FILE: src/App.tsx
+================================================================================
+
+import { createClient } from '@supabase/supabase-js'
+import { CollaborativeEditor } from './CollaborativeEditor'
+import './App.css'
+
+// REPLACE THESE WITH YOUR KEYS
+
+
+
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+  {
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    }
+  }
+}
+)
+
+function App() {
+  return (
+    <div className="App">
+      {/* We are connecting to the document with ID 'doc-1' */}
+      <CollaborativeEditor documentId="doc-1" supabase={supabase} />
+    </div>
+  )
+}
+
+export default App
+
+================================================================================
+FILE: src/SupabaseProvider.ts
+================================================================================
+
+import * as Y from 'yjs'
+import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
+
+export class SupabaseProvider {
+  doc: Y.Doc
+  channel: RealtimeChannel
+  awareness: Awareness
+  private _isConnected: boolean = false
+  private _resyncInterval: any
+
+  constructor(doc: Y.Doc, supabase: SupabaseClient, channelId: string) {
+    this.doc = doc
+    this.awareness = new Awareness(doc)
+    this.channel = supabase.channel(channelId)
+
+    this.channel
+      .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
+        // Apply updates from others
+        const update = new Uint8Array(payload)
+        Y.applyUpdate(doc, update, 'remote')
+      })
+      .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
+        // Update cursors
+        const update = new Uint8Array(payload)
+        applyAwarenessUpdate(this.awareness, update, 'remote')
+      })
+      .on('broadcast', { event: 'request-sync' }, () => {
+        // Another user just joined and asked for data.
+        // We send our current document state to them.
+        if (this._isConnected) {
+           const update = Y.encodeStateAsUpdate(doc)
+           this.channel.send({
+             type: 'broadcast',
+             event: 'sync-update',
+             payload: Array.from(update)
+           })
+        }
+      })
+      .subscribe((status) => {
+        console.log('SYSTEM: Realtime Status:', status)
+        
+        if (status === 'SUBSCRIBED') {
+          this._isConnected = true
+          
+          // HANDSHAKE: Ask other users for their latest state
+          // This fixes the issue where you see old DB data on load
+          this.channel.send({
+            type: 'broadcast',
+            event: 'request-sync',
+            payload: {}
+          })
+        }
+      })
+
+    // Broadcast local document changes
+    doc.on('update', (update, origin) => {
+      if (origin !== 'remote' && this._isConnected) {
+        this.channel.send({
+          type: 'broadcast',
+          event: 'sync-update',
+          payload: Array.from(update),
+        })
+      }
+    })
+
+    // Broadcast cursor changes
+    this.awareness.on('update', ({ added, updated, removed }) => {
+      if (!this._isConnected) return
+      const changedClients = added.concat(updated).concat(removed)
+      const update = encodeAwarenessUpdate(this.awareness, changedClients)
+      this.channel.send({
+        type: 'broadcast',
+        event: 'awareness-update',
+        payload: Array.from(update),
+      })
+    })
+    
+    // Optional: Periodically ask for sync to ensure consistency (Self-healing)
+    this._resyncInterval = setInterval(() => {
+        if (this._isConnected && this.awareness.getStates().size <= 1) {
+            // If we think we are alone, ask just in case
+            this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
+        }
+    }, 5000)
+  }
+
+  destroy() {
+    clearInterval(this._resyncInterval)
+    this.channel.unsubscribe()
+    this.doc.destroy()
+    this.awareness.destroy()
+  }
+}
+
+================================================================================
+FILE: src/main.tsx
+================================================================================
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+================================================================================
+FILE: src/App.css
+================================================================================
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+.cm-editor {
+  width: 60ch; /* 55 chars + ~5 chars for the line number gutter */
+  margin: 0 auto;
+  border: 1px solid #ccc;
+}
+
+/* Optional: Ensure the font is monospaced so 'ch' is accurate */
+.cm-scroller {
+  font-family: 'Fira Code', 'Courier New', monospace;
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+
+================================================================================
+FILE: src/index.css
+================================================================================
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+
+================================================================================
+FILE: src/CollaborativeEditor.tsx
+================================================================================
+
+import { useEffect, useRef, useState } from 'react'
+import * as Y from 'yjs'
+import { EditorView, basicSetup } from 'codemirror'
+import { EditorState } from '@codemirror/state'
+import { javascript } from '@codemirror/lang-javascript'
+import { yCollab } from 'y-codemirror.next'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { SupabaseProvider } from './SupabaseProvider'
+import debounce from 'lodash/debounce'
+
+// Colors for user cursors
+const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
+
+interface Props {
+  documentId: string
+  supabase: SupabaseClient
+}
+
+export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [status, setStatus] = useState('Loading...')
+
+  useEffect(() => {
+    const doc = new Y.Doc()
+    const provider = new SupabaseProvider(doc, supabase, documentId)
+    const ytext = doc.getText('codemirror')
+
+    // Random user color for demo purposes
+    const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
+    provider.awareness.setLocalStateField('user', {
+      name: 'User ' + Math.floor(Math.random() * 100),
+      color: userColor,
+    })
+
+    // --- Persistence Logic ---
+    // 1. Create a debounced save function
+    const saveToDatabase = debounce((content: string) => {
+      supabase
+        .from('documents')
+        .update({ content })
+        .eq('id', documentId)
+        .then(() => console.log('Saved to DB'))
+    }, 2000)
+
+    // 2. Fetch initial state (With Delay to prevent duplication)
+    setTimeout(() => {
+      // Check if Yjs already has content (from other users via Realtime)
+      if (ytext.toString().length > 0) {
+        setStatus('Synced from Peer')
+        return // Stop! Don't load from DB, we already have the latest.
+      }
+
+      // If empty, we are likely the first/only one here. Load from DB.
+      supabase
+        .from('documents')
+        .select('content')
+        .eq('id', documentId)
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Error fetching doc:', error)
+            setStatus('Error loading document')
+            return
+          }
+
+          // Double check: Did text arrive via Realtime while we were fetching?
+          if (doc.getText('codemirror').toString().length === 0) {
+            doc.transact(() => {
+               ytext.insert(0, data?.content || '')
+            })
+            setStatus('Loaded from DB')
+          }
+        })
+    }, 1000) // Wait 1 second for peers to reply
+
+    // --- Editor Setup ---
+    const state = EditorState.create({
+      doc: ytext.toString(), // Initial empty state, will update when Yjs syncs
+      extensions: [
+        basicSetup,
+        javascript(),
+        yCollab(ytext, provider.awareness), // Binds Yjs to CodeMirror
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            saveToDatabase(update.state.doc.toString())
+          }
+        })
+      ],
+    })
+
+    const view = new EditorView({
+      state,
+      parent: editorRef.current!,
+    })
+
+    // Cleanup
+    return () => {
+      view.destroy()
+      provider.destroy()
+      saveToDatabase.cancel()
+    }
+  }, [documentId, supabase])
+
+  return (
+    <div>
+      <div style={{ marginBottom: '10px', color: '#666' }}>Status: {status}</div>
+      <div 
+        ref={editorRef} 
+        style={{ border: '1px solid #ccc', minHeight: '400px', textAlign: 'left' }} 
+      />
+    </div>
+  )
+}
+
+================================================================================
+FILE: src/parser/fountain.g
+================================================================================
+
+@precedence { p1 @left, p2 @left, p3 @left }
+
+
+@top Screenplay { TitlePage? (Boneyard | Element)+ }
+
+Element {
+    ActionLine |
+    ForcedActionLine |
+    CenterLine |
+    CharacterBlock |
+    DualCharacterBlock |
+    EmptyLine |
+    ForceTransition |
+    SceneHeadingLine |
+    SectionLine |
+    SynopsisLine |
+    TransitionLine |
+    PageBreakLine
+}
+
+
+// --- Boneyard ---
+
+Boneyard { !p1 BoneStart Element* BoneEnd}
+
+
+// --- Title Page Rules ---
+// A title page contains one or more TitleKey:TitleValue pairs. The block ends with two newlines
+
+TitlePage { (TitleKey TitleValue Newline)+ EmptyLine EmptyLine }
+
+
+
+// --- Character & Dialogue Rules ---
+
+CharacterBlock { 
+   CharacterCue
+   Newline
+   (DialogueLine Newline | Parenthetical Newline)+
+}
+
+CharacterCue {
+  Character
+  ( WhiteSpace | LineParenthetical )* 
+}
+
+DualCharacterBlock {
+  DualCharacterCue
+  Newline
+  (DialogueLine Newline | Parenthetical Newline)+
+}
+
+DualCharacterCue {
+  DualCharacter
+  (WhiteSpace | LineParenthetical)* 
+}
+
+Parenthetical { !p2 LParen Inline+ RParen }
+
+DialogueLine { !p1 Inline+ }
+
+
+
+// --- Other Rules ---
+
+SceneHeadingLine { SceneHeading (Inline | LineParenthetical)* SceneNumber? Newline }
+
+LineParenthetical { !p2 LParen Inline+ RParen } // stuff that's not in a dialogueblock
+
+ActionLine { !p2 (LineParenthetical | Inline)+ Newline }
+
+ForcedActionLine { !p2 ForceActionMark (LineParenthetical | Inline)+ Newline }
+
+PageBreakLine { !p1 PageBreak Newline }
+
+TransitionLine { !p1 Transition Newline }
+
+SectionLine { !p2 SectionMark+ (LineParenthetical | Inline)* Newline}
+
+SynopsisLine { !p1 SynopsisMark (LineParenthetical | Inline)+ Newline}
+
+ForceTransition { ForceRight Newline }
+
+ForceRight { GreaterThan (LineParenthetical | Inline)+ }
+
+CenterLine { ForceRight LessThan Newline }
+
+SceneNumber {SectionMark Numbers* SectionMark}
+
+
+// --- Formatting Rules ---
+
+ItalicBold { !p2 TripleAsterisks Inline+ TripleAsterisks}
+
+Bold { !p2 DoubleAsterisks Inline+ DoubleAsterisks}
+
+Italic { !p2 SingleAsterisk Inline+ SingleAsterisk}
+
+Underline { !p2 Underscore Inline+ Underscore }
+
+Note { !p2 NoteStart Inline+ NoteEnd}
+
+Inline { !p2 Boneyard | Underline | ItalicBold | Bold | Italic | PlainText | Note | WhiteSpace }
+
+
+
+// --- Tokens ---
+
+
+@external tokens Fountain from "./tokenizer.js" {
+  ForceActionMark,
+  PageBreak,
+  DualCharacter, 
+  TitleKey,
+  TitleValue
+  Character,
+  Transition,
+  SynopsisMark,
+  SceneHeading,
+  GreaterThan,
+  LessThan,
+  BoneStart,
+  BoneEnd,
+  EmptyLine
+}
+
+@tokens {
+  Newline { "\n" }
+  Numbers { @digit }
+  WhiteSpace { " "}
+  LParen { "(" }
+  RParen { ")" }
+  NoteStart { "[[" }
+  NoteEnd { "]]" }
+  SectionMark {"#"}
+  SingleAsterisk { "*" }
+  DoubleAsterisks { "**" }
+  TripleAsterisks { "***" }
+  Underscore { "_"} 
+  PlainText { ![()#<^*_\\/\]\[\n]+ }
+  @precedence { GreaterThan LessThan NoteStart NoteEnd SectionMark LParen RParen BStart BEnd TripleAsterisks DoubleAsterisks SingleAsterisk Underscore WhiteSpace PlainText}
+}
+
+
+
+================================================================================
+FILE: src/parser/fountain-parser.terms.js
+================================================================================
+
+// This file was generated by lezer-generator. You probably shouldn't edit it.
+export const ForceActionMark = 1,
+  PageBreak = 2,
+  DualCharacter = 3,
+  TitleKey = 4,
+  TitleValue = 5,
+  Character = 6,
+  Transition = 7,
+  SynopsisMark = 8,
+  SceneHeading = 9,
+  GreaterThan = 10,
+  LessThan = 11,
+  BoneStart = 12,
+  BoneEnd = 13,
+  EmptyLine = 14,
+  Screenplay = 15,
+  TitlePage = 16,
+  Newline = 17,
+  Boneyard = 18,
+  Element = 19,
+  ActionLine = 20,
+  LineParenthetical = 21,
+  LParen = 22,
+  Inline = 23,
+  Underline = 24,
+  Underscore = 25,
+  ItalicBold = 26,
+  TripleAsterisks = 27,
+  Bold = 28,
+  DoubleAsterisks = 29,
+  Italic = 30,
+  SingleAsterisk = 31,
+  PlainText = 32,
+  Note = 33,
+  NoteStart = 34,
+  NoteEnd = 35,
+  WhiteSpace = 36,
+  RParen = 37,
+  ForcedActionLine = 38,
+  CenterLine = 39,
+  ForceRight = 40,
+  CharacterBlock = 41,
+  CharacterCue = 42,
+  DialogueLine = 43,
+  Parenthetical = 44,
+  DualCharacterBlock = 45,
+  DualCharacterCue = 46,
+  ForceTransition = 47,
+  SceneHeadingLine = 48,
+  SceneNumber = 49,
+  SectionMark = 50,
+  Numbers = 51,
+  SectionLine = 52,
+  SynopsisLine = 53,
+  TransitionLine = 54,
+  PageBreakLine = 55;
+
+
+================================================================================
+FILE: src/parser/fountain-parser.js
+================================================================================
+
+// This file was generated by lezer-generator. You probably shouldn't edit it.
+import { LRParser } from '@lezer/lr';
+import { Fountain } from './tokenizer.js';
+export const parser = LRParser.deserialize({
+  version: 14,
+  states:
+    ".WO!_OROOO!fOPO'#DfO!kOPO'#ClO!sORO'#CtO!sORO'#CvO!sORO'#CxO!sORO'#CzO!sORO'#C}O#_ORO'#CsOOOP'#Cs'#CsO!sORO'#CqOOOP'#Di'#DiO$rORO'#CpO$uORO'#DSO$uORO'#DUO$|ORO'#D]O%UOQO'#DWO%aOQO'#DVO%fOQO'#D[O%qOQO'#DZO%vORO'#D^OOOP'#Do'#DoO&TORO'#DbO$uORO'#DcO&bOQO'#DdO&gOQO'#DeOOOP'#Co'#CoO&lORO'#CnOOOP'#Dg'#DgQQOROOOQOROOO&sOQO,5:QOOOP-E7d-E7dO&xOPO,59WO'fORO,59`OOOP'#Dj'#DjO(UORO,59bO(tORO,59dO)dORO,59fO)kORO,59iO)rORO,59]OOOP-E7g-E7gOOOP,59[,59[O)yORO,59nO*TORO,59pO*bOQO,59oOOOP,59w,59wOOOO'#Dk'#DkO*gOQO,59rO*rORO,59qO*yOQO,59vO*rORO,59uOOOP'#Dm'#DmO+UORO,59xO+cOSO'#D_OOOP,59x,59xO+kOQO,59xO+pORO,59|OOOP-E7m-E7mOOOP,59|,59|O+zORO,59}OOOP,5:O,5:OOOOP,5:P,5:POOOP'#Dh'#DhO,UORO,59YOOOP,59Y,59YOOOP-E7e-E7eOOOP1G/l1G/lOOOP1G.r1G.rO,]ORO1G.zOOOP-E7h-E7hO-ZORO1G.|O.XORO1G/OO/VORO1G/QOOOP1G/T1G/TOOOP1G.w1G.wOOOP1G/Y1G/YOOOP1G/Z1G/ZOOOO-E7i-E7iO0TORO'#DXO!sORO'#DYO0[OQO'#DlO0aORO1G/]O1^ORO1G/aOOOP-E7k-E7kOOOP1G/d1G/dO2ZOQO1G/dOOOO'#Dn'#DnO2`OSO,59yOOOO,59y,59yOOOP1G/h1G/hOOOP1G/i1G/iOOOP-E7f-E7fOOOP1G.t1G.tO2hORO,59tOOOP,5:W,5:WOOOP-E7j-E7jOOOP7+%O7+%OOOOO-E7l-E7lOOOO1G/e1G/eOOOO1G/`1G/`",
+  stateData:
+    "2|~OP]OQiORbOU`OVhOWgOXdOY^O[kO^jOfYOiROkSOmTOoUOpXOrVOtXO!SeO~OSPO~PQOToO~OSPO^qO~O[kOiROkSOmTOoUOpXOrVOtXO~OP!ZXQ!ZXR!ZXU!ZXV!ZXW!ZXX!ZXY!ZX[gX^!ZXagXfgXigXkgXmgXogXpgXrgXtgX!S!ZX!d!ZX~OazOfYO~P!sOZ}Oa!OO~OfYOt!POazX~Oa!RO~OfYOt!POa!OX~Oa!TO~Oa!XOfYO!S!WO~P!sOa!]OfYO!SeO~P!sOa!_O~Oa!`O~O]!cO~PQOa!eO~O^!fO~O[kOkSOmTOoUOpXOrVOtXO~Oi!gO~P&}O[kOiROmTOoUOpXOrVOtXO~Ok!iO~P'mO[kOiROkSOoUOpXOrVOtXO~Om!jO~P(]O[kOiROkSOmTOpXOrVOtXO~Oo!kO~P({Os!lO~P!sOu!mO~P!sOa!nOfYO~P!sOfYOZxaaxa~P!sOa!oO~OfYOt!POaza~Of!rO~P!sOfYOt!POa!Oa~Oa!wOfYO!S!WO~P!sO!S!{O!T!yO~Oa!wO~Oa!|OfYO~P!sOa!}OfYO~P!sO]#PO~PQO[kOahifhiihikhimhiohiphirhithishiuhiZhi!Shi~O[kOajifjiijikjimjiojipjirjitjisjiujiZji!Sji~O[kOalifliiliklimlioliplirlitlisliuliZli!Sli~O[kOanifniiniknimnionipnirnitnisniuniZni!Sni~Oa{X~P!sOa#RO~Of!rOPyiQyiRyiUyiVyiWyiXyiYyi^yi!Syi!dyi]yi~P!sOf!rOP}iQ}iR}iU}iV}iW}iX}iY}i^}i!S}i!d}i]}i~P!sOa#TO~O!S#VO!T!yO~Ou#WO~P!sOrs!Sfukmoitpk~",
+  goto: ")n!dPPPPPPPPPPPPPPPP!eP!h#e#n#uP$a%`P%`P%`P%`PP%`PPPP#n#n&V#n&^&e&e#n&k#n#n&rPP#n#n#n#n&x'O'V']'w(r(|)W)^)dRnOUWOmn!kXRSTUVY[]^dfgkrtuvwx{|!R!T!V!Z!^!b!g!i!j!k!q!r!t!u#QUlOmnT!ak!bZjOkmn!blZO[]^fgkmn{|!Z!^!bW!P`b!Q!ST!Ud!VlZO[]^fgkmn{|!Z!^!b!OsRSTUVYrtuvwx!R!T!g!i!j!k!q!r!t!u#QT!Ud!V!iXORSTUVY[]^dfgkmnrtuvwx{|!R!T!V!Z!^!b!q!r!t!u#QZ_Okmn!bZaOkmn!bX!s!R!T!t!uZcOkmn!bQ!YdR!x!VQQORpQSmOnR!dmQ!bkR#O!bY[Okmn!bYy[{|!Z!^Q{]Q|^Q!ZfR!^gSrR!gStS!iSuT!jSvU!kQwVQxY`!hrtuvwx!q#QW!q!R!T!t!uR#Q!rQ!Q`Q!SbT!p!Q!SQ!t!RQ!u!TT#S!t!uQ!VdR!v!VQ!z!WR#U!zYfOkmn!bR![f",
+  nodeNames:
+    '⚠ ForceActionMark PageBreak DualCharacter TitleKey TitleValue Character Transition SynopsisMark SceneHeading GreaterThan LessThan BoneStart BoneEnd EmptyLine Screenplay TitlePage Newline Boneyard Element ActionLine LineParenthetical LParen Inline Underline Underscore ItalicBold TripleAsterisks Bold DoubleAsterisks Italic SingleAsterisk PlainText Note NoteStart NoteEnd WhiteSpace RParen ForcedActionLine CenterLine ForceRight CharacterBlock CharacterCue DialogueLine Parenthetical DualCharacterBlock DualCharacterCue ForceTransition SceneHeadingLine SceneNumber SectionMark Numbers SectionLine SynopsisLine TransitionLine PageBreakLine',
+  maxTerm: 66,
+  skippedNodes: [0],
+  repeatNodeCount: 10,
+  tokenData:
+    "&V~RdOY!aYZ#XZp!apq#^qs!ast$Qtx!axy$Vyz$[z{$a{!P!a!Q![$v![!^!a!_!}!a!}#O%j#P#Q%u#R#S&Q#S;'S!a;'S;=`#R<%lO!aP!fXpPOY!aZs!atx!a{!P!a!Q!^!a!_!}!a#S;'S!a;'S;=`#R<%lO!aP#UP;=`<%l!a~#^Oa~~#eXt~pPOY!aZs!atx!a{!P!a!Q!^!a!_!}!a#S;'S!a;'S;=`#R<%lO!a~$VO!S~~$[Of~~$aOu~~$fPo~z{$i~$nPm~z{$q~$vOk~R$}X!TQpPOY!aZs!atx!a{!P!a!Q!^!a!_!}!a#S;'S!a;'S;=`#R<%lO!a~%mP!}#O%p~%uOr~~%xP#P#Q%{~&QOs~~&VOi~",
+  tokenizers: [Fountain, 0, 1],
+  topRules: { Screenplay: [0, 15] },
+  tokenPrec: 813,
+});
+
+
+================================================================================
+FILE: src/parser/tokenizer.js
+================================================================================
+
+// src/parser/tokenizer.js
+
+import { ExternalTokenizer } from '@lezer/lr';
+import {
+  PageBreak,
+  TitleKey,
+  TitleValue,
+  Character,
+  Transition,
+  SynopsisMark,
+  SceneHeading,
+  GreaterThan,
+  LessThan,
+  BoneStart,
+  BoneEnd,
+  EmptyLine,
+  DualCharacter,
+  ForceActionMark, // This will be generated in the next step
+} from './fountain-parser.terms.js';
+
+// Character code constants (no changes here)
+const newline = 10,
+  space = 32,
+  tab = 9,
+  asterisk = 42,
+  slash = 47,
+  colon = 58,
+  lParen = 40,
+  rParen = 41,
+  equals = 61,
+  greaterThan = 62,
+  lessThan = 60,
+  at = 64,
+  a = 97,
+  z = 122,
+  T = 84,
+  O = 79,
+  bang = 33,
+  A = 65, // ADDED: Character code for 'A'
+  Z = 90; // ADDED: Character code for 'Z'
+
+class FountainTokenizer {
+  constructor() {
+    this.inBoneyard = false;
+  }
+
+  token(input, stack) {
+    const start = input.pos;
+
+    // --- Boneyard, TitleValue, LessThan, Start-of-line checks ---
+    // (This top section of the code is unchanged)
+    if (input.peek(0) === slash && input.peek(1) === asterisk) {
+      if (!this.inBoneyard) {
+        this.inBoneyard = true;
+        input.advance(2);
+        input.acceptToken(BoneStart);
+        return;
+      }
+    }
+    if (input.peek(0) === asterisk && input.peek(1) === slash) {
+      if (this.inBoneyard) {
+        this.inBoneyard = false;
+        input.advance(2);
+        input.acceptToken(BoneEnd);
+        return;
+      }
+    }
+    if (stack.canShift(TitleValue)) {
+      let endPos = 0;
+      while (input.peek(endPos) !== newline && input.peek(endPos) !== -1) {
+        endPos++;
+      }
+      let lookahead = endPos;
+      while (true) {
+        if (input.peek(lookahead) === -1 || input.peek(lookahead) !== newline)
+          break;
+        let nextLineStart = lookahead + 1;
+        const isTabIndented = input.peek(nextLineStart) === tab;
+        const isSpaceIndented =
+          input.peek(nextLineStart) === space &&
+          input.peek(nextLineStart + 1) === space;
+        if (isTabIndented || isSpaceIndented) {
+          let nextLineEnd = nextLineStart;
+          while (
+            input.peek(nextLineEnd) !== newline &&
+            input.peek(nextLineEnd) !== -1
+          ) {
+            nextLineEnd++;
+          }
+          endPos = nextLineEnd;
+          lookahead = nextLineEnd;
+        } else {
+          break;
+        }
+      }
+      input.advance(endPos);
+      input.acceptToken(TitleValue);
+      return;
+    }
+    if (input.peek(0) === lessThan) {
+      let pos = 1;
+      while (input.peek(pos) === space) pos++;
+      const nextChar = input.peek(pos);
+      if (nextChar === newline || nextChar === -1) {
+        input.advance(1);
+        input.acceptToken(LessThan);
+        return;
+      }
+    }
+    const isStartOfLine = start === 0 || input.peek(-1) === newline;
+    if (!isStartOfLine) {
+      return;
+    }
+    let scanPos = 0;
+    while (true) {
+      const char = input.peek(scanPos);
+      if (char === space || char === tab) {
+        scanPos++;
+        continue;
+      }
+      if (char === newline) {
+        input.advance(scanPos + 1);
+        input.acceptToken(EmptyLine);
+        return;
+      }
+      break;
+    }
+    if (input.peek(0) === greaterThan) {
+      input.advance(1);
+      input.acceptToken(GreaterThan);
+      return;
+    }
+    if (input.peek(0) === equals && input.peek(1) !== equals) {
+      input.advance(1);
+      input.acceptToken(SynopsisMark);
+      return;
+    }
+    if (
+      input.peek(0) === equals &&
+      input.peek(1) === equals &&
+      input.peek(2) === equals
+    ) {
+      const nextChar = input.peek(3);
+      if (nextChar === newline || nextChar === -1) {
+        input.advance(3);
+        input.acceptToken(PageBreak);
+        return;
+      }
+    }
+    let titleLineEndPos = start;
+    let colonPos = -1;
+    let hasContentBeforeColon = false;
+    while (true) {
+      const char = input.peek(titleLineEndPos - start);
+      if (char === -1 || char === newline) break;
+      if (char === colon) colonPos = titleLineEndPos;
+      if (char !== space && colonPos === -1) hasContentBeforeColon = true;
+      titleLineEndPos++;
+    }
+    if (colonPos !== -1 && hasContentBeforeColon && stack.canShift(TitleKey)) {
+      input.advance(colonPos - start + 1);
+      input.acceptToken(TitleKey);
+      return;
+    }
+    const prefixes = ['INT./EXT.', 'INT/EXT.', 'INT.', 'EXT.', 'I/E.'];
+    let buffer = '';
+    for (let i = 0; i < 10; i++) {
+      const char = input.peek(i);
+      if (char === -1) break;
+      buffer += String.fromCharCode(char);
+    }
+    for (const prefix of prefixes) {
+      if (buffer.startsWith(prefix)) {
+        input.advance(prefix.length);
+        input.acceptToken(SceneHeading);
+        return;
+      }
+    }
+    if (input.peek(0) === 46 /* . */) {
+      const nextChar = input.peek(1);
+      if (
+        nextChar !== 46 &&
+        nextChar !== newline &&
+        nextChar !== -1 &&
+        nextChar !== space
+      ) {
+        input.advance(1);
+        input.acceptToken(SceneHeading);
+        return;
+      }
+    }
+
+    // --- [REFACTORED] CHARACTER & TRANSITION LOGIC ---
+
+    // MODIFIED: This is the new, more explicit implementation for the '!' rule.
+    if (input.peek(0) === bang) {
+      // This is a Forced Action Line. We consume the '!' as its own token
+      // and let the grammar parse the rest of the line as the content.
+      input.advance(1);
+      input.acceptToken(ForceActionMark);
+      return;
+    }
+
+    // Helper functions remain the same
+    const isPrecededByBlankLine = () => {
+      if (start === 0) return true;
+      let prev = input.peek(-2);
+      if (prev === 13) prev = input.peek(-3);
+      return prev === newline;
+    };
+    const isFollowedByNonBlankLine = (endPos) => {
+      let pos = endPos;
+      if (input.peek(pos - start) === 13) pos++;
+      if (input.peek(pos - start) === newline) pos++;
+      while (input.peek(pos - start) === space) pos++;
+      const nextChar = input.peek(pos - start);
+      return nextChar !== newline && nextChar !== -1;
+    };
+
+    // The initial line scan remains the same
+    let scanEndPos = start;
+    let hasLowercase = false;
+    let contentEndPos = start;
+    let parenPos = -1;
+    let lineLastChar = -1;
+    let lineHasContent = false;
+    while (true) {
+      const char = input.peek(scanEndPos - start);
+      if (char === -1 || char === newline) break;
+      if (char >= a && char <= z) hasLowercase = true;
+      if (char !== space) {
+        contentEndPos = scanEndPos + 1;
+        lineLastChar = char;
+        lineHasContent = true;
+      }
+      if (char === lParen && parenPos === -1) parenPos = scanEndPos;
+      scanEndPos++;
+    }
+
+    if (!lineHasContent) return;
+
+    // The dual dialogue caret check remains the same
+    let isDualDialogue = false;
+    if (input.peek(contentEndPos - start - 1) === 94 /* ^ */) {
+      isDualDialogue = true;
+      contentEndPos--;
+      while (
+        contentEndPos > start &&
+        input.peek(contentEndPos - start - 1) === space
+      ) {
+        contentEndPos--;
+      }
+      lineLastChar = input.peek(contentEndPos - start - 1);
+    }
+
+    // --- NEW LOGIC ORDER ---
+
+    // Condition 1: Check for Forced Character (@) first, as it's the most specific override.
+    if (input.peek(0) === at) {
+      if (isPrecededByBlankLine() && isFollowedByNonBlankLine(scanEndPos)) {
+        let characterNameEndPos = parenPos !== -1 ? parenPos : contentEndPos;
+        while (
+          characterNameEndPos > start &&
+          input.peek(characterNameEndPos - start - 1) === space
+        ) {
+          characterNameEndPos--;
+        }
+        // A forced character cannot be a dual character.
+        input.advance(characterNameEndPos - start);
+        input.acceptToken(Character);
+        return;
+      }
+    }
+
+    // If the line has any lowercase letters, it can't be a Character or Transition, so we can exit.
+    if (hasLowercase) {
+      return;
+    }
+
+    // Condition 2: Check for a Transition.
+    if (
+      scanEndPos - start > 3 &&
+      input.peek(contentEndPos - start - 3) === T &&
+      input.peek(contentEndPos - start - 2) === O &&
+      input.peek(contentEndPos - start - 1) === colon
+    ) {
+      input.advance(scanEndPos - start);
+      input.acceptToken(Transition);
+      return;
+    }
+
+    // MODIFIED: Condition 3: Handle Regular and Dual Characters with the new, more specific rule.
+    const firstChar = input.peek(0);
+    const secondChar = input.peek(1);
+    const startsWithTwoCaps =
+      firstChar >= A && firstChar <= Z && secondChar >= A && secondChar <= Z;
+
+    if (
+      startsWithTwoCaps &&
+      isPrecededByBlankLine() &&
+      isFollowedByNonBlankLine(scanEndPos)
+    ) {
+      const extensionIsValid =
+        parenPos === -1 || (parenPos !== -1 && lineLastChar === rParen);
+
+      if (extensionIsValid) {
+        let characterNameEndPos = parenPos !== -1 ? parenPos : contentEndPos;
+        while (
+          characterNameEndPos > start &&
+          input.peek(characterNameEndPos - start - 1) === space
+        ) {
+          characterNameEndPos--;
+        }
+
+        if (isDualDialogue) {
+          input.advance(characterNameEndPos - start);
+          input.acceptToken(DualCharacter);
+        } else {
+          input.advance(characterNameEndPos - start);
+          input.acceptToken(Character);
+        }
+        return;
+      }
+    }
+  }
+}
+
+const tokenizer = new FountainTokenizer();
+export const Fountain = new ExternalTokenizer(tokenizer.token.bind(tokenizer));
+

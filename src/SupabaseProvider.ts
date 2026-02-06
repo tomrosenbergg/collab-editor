@@ -7,7 +7,7 @@ export class SupabaseProvider {
   channel: RealtimeChannel
   awareness: Awareness
   private _isConnected: boolean = false
-  private _resyncInterval: any
+  private _resyncInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(doc: Y.Doc, supabase: SupabaseClient, channelId: string) {
     this.doc = doc
@@ -16,18 +16,14 @@ export class SupabaseProvider {
 
     this.channel
       .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
-        // Apply updates from others
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
       .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
-        // Update cursors
         const update = new Uint8Array(payload)
         applyAwarenessUpdate(this.awareness, update, 'remote')
       })
       .on('broadcast', { event: 'request-sync' }, () => {
-        // Another user just joined and asked for data.
-        // We send our current document state to them.
         if (this._isConnected) {
            const update = Y.encodeStateAsUpdate(doc)
            this.channel.send({
@@ -38,13 +34,8 @@ export class SupabaseProvider {
         }
       })
       .subscribe((status) => {
-        console.log('SYSTEM: Realtime Status:', status)
-        
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
-          
-          // HANDSHAKE: Ask other users for their latest state
-          // This fixes the issue where you see old DB data on load
           this.channel.send({
             type: 'broadcast',
             event: 'request-sync',
@@ -53,7 +44,6 @@ export class SupabaseProvider {
         }
       })
 
-    // Broadcast local document changes
     doc.on('update', (update, origin) => {
       if (origin !== 'remote' && this._isConnected) {
         this.channel.send({
@@ -64,7 +54,6 @@ export class SupabaseProvider {
       }
     })
 
-    // Broadcast cursor changes
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
@@ -76,17 +65,34 @@ export class SupabaseProvider {
       })
     })
     
-    // Optional: Periodically ask for sync to ensure consistency (Self-healing)
     this._resyncInterval = setInterval(() => {
         if (this._isConnected && this.awareness.getStates().size <= 1) {
-            // If we think we are alone, ask just in case
             this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
         }
     }, 5000)
   }
 
+  get hasPeers(): boolean {
+    return this.awareness.getStates().size > 1
+  }
+
+  // Persists the full binary state to Supabase
+async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
+  // Use encodeStateAsUpdate to get the full document history
+  const state = Y.encodeStateAsUpdate(this.doc);
+  
+  // Explicitly convert to a standard Array for storage 
+  // (Postgres bytea accepts byte arrays via the JS driver)
+  const payload = Array.from(state);
+
+  return supabase
+    .from('documents')
+    .update({ content: payload })
+    .eq('id', documentId);
+}
+
   destroy() {
-    clearInterval(this._resyncInterval)
+    if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
     this.doc.destroy()
     this.awareness.destroy()

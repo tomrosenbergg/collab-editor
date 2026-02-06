@@ -8,7 +8,6 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import debounce from 'lodash/debounce'
 
-// Colors for user cursors
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
 interface Props {
@@ -18,72 +17,88 @@ interface Props {
 
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState('Loading...')
+  const [status, setStatus] = useState('Connecting...')
 
   useEffect(() => {
     const doc = new Y.Doc()
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Random user color for demo purposes
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-    // --- Persistence Logic ---
-    // 1. Create a debounced save function
-    const saveToDatabase = debounce((content: string) => {
-      supabase
-        .from('documents')
-        .update({ content })
-        .eq('id', documentId)
-        .then(() => console.log('Saved to DB'))
+    // Persist full binary state to DB
+    const saveToDatabase = debounce(() => {
+      provider.saveStateToSupabase(supabase, documentId)
+        .then(({ error }) => {
+          if (!error) console.log('Binary state saved')
+        })
     }, 2000)
 
-    // 2. Fetch initial state (With Delay to prevent duplication)
-    setTimeout(() => {
-      // Check if Yjs already has content (from other users via Realtime)
-      if (ytext.toString().length > 0) {
+    let receivedPeerData = false
+    const onUpdate = (_update: Uint8Array, origin: any) => {
+      if (origin === 'remote') {
+        receivedPeerData = true
         setStatus('Synced from Peer')
-        return // Stop! Don't load from DB, we already have the latest.
       }
+    }
+    doc.on('update', onUpdate)
 
-      // If empty, we are likely the first/only one here. Load from DB.
-      supabase
-        .from('documents')
-        .select('content')
-        .eq('id', documentId)
-        .single()
-        .then(({ data, error }) => {
-          if (error) {
-            console.error('Error fetching doc:', error)
-            setStatus('Error loading document')
-            return
-          }
+    const initLoad = async () => {
+  await new Promise(resolve => setTimeout(resolve, 2000));
 
-          // Double check: Did text arrive via Realtime while we were fetching?
-          if (doc.getText('codemirror').toString().length === 0) {
-            doc.transact(() => {
-               ytext.insert(0, data?.content || '')
-            })
-            setStatus('Loaded from DB')
-          }
-        })
-    }, 1000) // Wait 1 second for peers to reply
+  if (receivedPeerData || ytext.toString().length > 0) {
+    doc.off('update', onUpdate);
+    return;
+  }
 
-    // --- Editor Setup ---
+  setStatus('Loading from DB...');
+  const { data, error } = await supabase
+    .from('documents')
+    .select('content')
+    .eq('id', documentId)
+    .single();
+
+  if (error) {
+    console.error('Fetch Error:', error);
+    setStatus('Error loading document');
+  } else if (data?.content) {
+    try {
+      // Ensure the data is wrapped in a Uint8Array
+      const binaryUpdate = new Uint8Array(data.content);
+      
+      // Safety check: Don't apply if the array is empty or too small
+      if (binaryUpdate.length > 0) {
+        Y.applyUpdate(doc, binaryUpdate, 'initial-db-load');
+        setStatus('Loaded from DB');
+      } else {
+        setStatus('New Document');
+      }
+    } catch (e) {
+      console.error('Yjs Decoding Error:', e);
+      setStatus('Corrupted document state');
+    }
+  } else {
+    setStatus('New Document');
+  }
+  doc.off('update', onUpdate);
+};
+
+    initLoad()
+
     const state = EditorState.create({
-      doc: ytext.toString(), // Initial empty state, will update when Yjs syncs
+      doc: ytext.toString(),
       extensions: [
         basicSetup,
         javascript(),
-        yCollab(ytext, provider.awareness), // Binds Yjs to CodeMirror
+        yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            saveToDatabase(update.state.doc.toString())
+            saveToDatabase()
           }
         })
       ],
@@ -94,7 +109,6 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // Cleanup
     return () => {
       view.destroy()
       provider.destroy()
@@ -104,7 +118,9 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
 
   return (
     <div>
-      <div style={{ marginBottom: '10px', color: '#666' }}>Status: {status}</div>
+      <div style={{ marginBottom: '10px', color: '#888', fontSize: '0.9em' }}>
+        Status: {status}
+      </div>
       <div 
         ref={editorRef} 
         style={{ border: '1px solid #ccc', minHeight: '400px', textAlign: 'left' }} 
