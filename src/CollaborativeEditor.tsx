@@ -42,33 +42,38 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
         .then(() => console.log('Saved to DB'))
     }, 2000)
 
-    // 2. Fetch initial state
-    supabase
-      .from('documents')
-      .select('content')
-      .eq('id', documentId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Error fetching doc:', error)
-          setStatus('Error loading document')
-          return
-        }
+    // 2. Fetch initial state (With Delay to prevent duplication)
+    setTimeout(() => {
+      // Check if Yjs already has content (from other users via Realtime)
+      if (ytext.toString().length > 0) {
+        setStatus('Synced from Peer')
+        return // Stop! Don't load from DB, we already have the latest.
+      }
 
-        // Initialize Yjs doc with DB content if it's empty
-        if (doc.getText('codemirror').toString() === '') {
-          doc.transact(() => {
-             ytext.insert(0, data?.content || '')
-          })
-        }
-        
-        setStatus('Ready')
-      })
+      // If empty, we are likely the first/only one here. Load from DB.
+      supabase
+        .from('documents')
+        .select('content')
+        .eq('id', documentId)
+        .single()
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('Error fetching doc:', error)
+            setStatus('Error loading document')
+            return
+          }
+
+          // Double check: Did text arrive via Realtime while we were fetching?
+          if (doc.getText('codemirror').toString().length === 0) {
+            doc.transact(() => {
+               ytext.insert(0, data?.content || '')
+            })
+            setStatus('Loaded from DB')
+          }
+        })
+    }, 1000) // Wait 1 second for peers to reply
 
     // --- Editor Setup ---
-    // We wait until the DB fetch is done (or at least triggered) to mount
-    // But for a smoother UI, we can mount immediately and let Yjs handle the insert.
-    
     const state = EditorState.create({
       doc: ytext.toString(), // Initial empty state, will update when Yjs syncs
       extensions: [
