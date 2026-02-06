@@ -18,6 +18,17 @@
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
+.cm-editor {
+  width: 60ch; /* 55 chars + ~5 chars for the line number gutter */
+  margin: 0 auto;
+  border: 1px solid #ccc;
+}
+
+/* Optional: Ensure the font is monospaced so 'ch' is accurate */
+.cm-scroller {
+  font-family: 'Fira Code', 'Courier New', monospace;
+}
+
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);

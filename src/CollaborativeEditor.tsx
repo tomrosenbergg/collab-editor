@@ -75,6 +75,7 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
         basicSetup,
         javascript(),
         yCollab(ytext, provider.awareness), // Binds Yjs to CodeMirror
+        EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             saveToDatabase(update.state.doc.toString())

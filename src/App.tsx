@@ -22,7 +22,6 @@ const supabase = createClient(
 function App() {
   return (
     <div className="App">
-      <h1>Collaborative Code Editor</h1>
       {/* We are connecting to the document with ID 'doc-1' */}
       <CollaborativeEditor documentId="doc-1" supabase={supabase} />
     </div>
