@@ -11,6 +11,7 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
   
   // Parse Postgres HEX format (\x0123...)
   const parsePostgresHex = (hexContent: string): Uint8Array => {
+    // Handle bytea format
     const cleanHex = hexContent.startsWith('\\x') ? hexContent.slice(2) : hexContent
     if (!/^[0-9a-fA-F]*$/.test(cleanHex)) return new Uint8Array([])
     const match = cleanHex.match(/.{1,2}/g)
@@ -20,6 +21,7 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
 
   const loadDocument = useCallback(async (documentId: string) => {
     setStatus('loading')
+    isLoaded.current = false // Reset loaded state
     try {
       const { data, error } = await supabase
         .from('documents')
@@ -30,9 +32,11 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
       if (error) throw error
 
       if (data?.content) {
-        const update = parsePostgresHex(data.content)
+        // Handle both string format (from DB) or potential raw bytes
+        const contentStr = typeof data.content === 'string' ? data.content : ''
+        const update = parsePostgresHex(contentStr)
+        
         if (update.length > 0) {
-          // 'db-load' origin prevents this from being broadcasted back to peers unnecessarily
           Y.applyUpdate(doc, update, 'db-load')
         }
       }
@@ -46,25 +50,25 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
 
   const saveDocument = useCallback(
     debounce(async (documentId: string) => {
-      // SAFETY: Don't save if we haven't loaded yet (prevents overwriting DB with empty init state)
       if (!isLoaded.current) return 
 
       setStatus('saving')
       try {
         const state = Y.encodeStateAsUpdate(doc)
         
-        // Convert to HEX for Postgres
+        // Convert to HEX for Postgres bytea
         const hex = Array.from(state)
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('')
         
+        // We only update content and timestamp
         const { error } = await supabase
           .from('documents')
-          .upsert({ 
-            id: documentId, 
+          .update({ 
             content: `\\x${hex}`,
-            updated_at: new Date().toISOString() // Assuming you have this column
+            updated_at: new Date().toISOString()
           })
+          .eq('id', documentId)
 
         if (error) throw error
         
@@ -73,7 +77,7 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
         console.error('Failed to save document:', e)
         setStatus('error')
       }
-    }, 2000), // 2 second debounce
+    }, 2000), 
     [supabase, doc]
   )
 
