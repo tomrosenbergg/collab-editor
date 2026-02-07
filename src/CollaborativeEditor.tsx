@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+// src/CollaborativeEditor.tsx
+import { useEffect, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { yCollab } from 'y-codemirror.next'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
-import debounce from 'lodash/debounce'
+import { useYjsPersistence } from './hooks/useYjsPersistence'
 
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
@@ -14,144 +15,49 @@ interface Props {
   supabase: SupabaseClient
 }
 
-// Custom Theme to override CodeMirror defaults
+// Custom Theme (Unchanged)
 const screenplayTheme = EditorView.theme({
-  "&": {
-    color: "white",
-    backgroundColor: "transparent",
-  },
-  // Hide the gutter (line numbers)
-  ".cm-gutters": {
-    display: "none !important"
-  },
-  // Remove active line highlighting
-  ".cm-activeLine": {
-    backgroundColor: "transparent !important"
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "transparent !important"
-  },
-  // Force Cursor to be white
-  ".cm-cursor, .cm-dropCursor": {
-    borderLeftColor: "white !important"
-  },
-  // Ensure the content area matches the container width
-  ".cm-content": {
-    padding: "0" 
-  }
+  "&": { color: "white", backgroundColor: "transparent" },
+  ".cm-gutters": { display: "none !important" },
+  ".cm-activeLine": { backgroundColor: "transparent !important" },
+  ".cm-activeLineGutter": { backgroundColor: "transparent !important" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "white !important" },
+  ".cm-content": { padding: "0" }
 })
 
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
+  
+  // 1. Create the Y.Doc instance once per lifecycle
+  const doc = useMemo(() => new Y.Doc(), [])
+  
+  // 2. Initialize Persistence Hook
+  const { status, lastSaved, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
 
   useEffect(() => {
-    const doc = new Y.Doc()
+    // 3. Connect to Supabase Realtime (Transport)
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
+    // Set local awareness (User info)
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-    // Save to DB (debounced)
-    const saveToDatabase = debounce(() => {
-      provider.saveStateToSupabase(supabase, documentId)
-        .then(({ error }) => {
-          if (!error) console.log('Binary state saved to DB')
-          else console.error('Save error:', error)
-        })
-    }, 2000)
-
-    let receivedPeerData = false
-    const onUpdate = (_update: Uint8Array, origin: any) => {
-      if (origin === 'remote') {
-        receivedPeerData = true
-        console.log('Synced from Peer')
-      }
-    }
-    doc.on('update', onUpdate)
-
-    const initLoad = async () => {
-      console.log('Connecting...')
-      
-      // 1. Handshake: Give peers 2 seconds to respond with live data
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      if (receivedPeerData || ytext.toString().length > 0) {
-        doc.off('update', onUpdate)
-        return 
-      }
-
-      // 2. Fallback: Load from Database
-      console.log('Loading from DB...')
-      const { data, error } = await supabase
-        .from('documents')
-        .select('content')
-        .eq('id', documentId)
-        .maybeSingle()
-
-      if (error) {
-        console.error('Fetch Error:', error)
-      } else if (data?.content) {
-        try {
-          let rawContent = data.content
-          
-          // --- ROBUST DECODING START ---
-          if (typeof rawContent === 'string') {
-            const hex = rawContent.startsWith('\\x') 
-              ? rawContent.slice(2) 
-              : rawContent
-
-            if (/^[0-9a-fA-F]*$/.test(hex)) {
-               const match = hex.match(/.{1,2}/g)
-               if (match) {
-                 rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
-               } else {
-                 rawContent = new Uint8Array([])
-               }
-            } else {
-               try {
-                  const parsed = JSON.parse(rawContent)
-                  if (Array.isArray(parsed)) rawContent = new Uint8Array(parsed)
-               } catch (e) {
-                  console.warn('Content string is neither Hex nor JSON array')
-               }
-            }
-          } 
-          else if (Array.isArray(rawContent)) {
-             rawContent = new Uint8Array(rawContent)
-          }
-          // --- ROBUST DECODING END ---
-
-          if (rawContent instanceof Uint8Array && rawContent.length > 0) {
-            Y.applyUpdate(doc, rawContent, 'initial-db-load')
-            console.log('Loaded from DB')
-          } else {
-            console.log('New Document (Empty DB Content)')
-          }
-        } catch (e) {
-          console.error('Yjs Decoding Error:', e)
-        }
-      } else {
-        console.log('New Document')
-      }
-      doc.off('update', onUpdate)
-    }
-
-    initLoad()
-
+    // 4. Initialize CodeMirror
     const state = EditorState.create({
-      doc: ytext.toString(),
+      doc: ytext.toString(), // Initially empty until DB loads or peers sync
       extensions: [
         basicSetup,
-        screenplayTheme, // Apply custom visual theme
+        screenplayTheme,
         yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            saveToDatabase()
+            // Trigger debounced save on every keystroke
+            saveDocument(documentId)
           }
         })
       ],
@@ -162,20 +68,43 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // Auto-focus the editor immediately
-    view.focus()
+    // 5. Load Data (Fire and forget - Yjs handles the merge)
+    loadDocument(documentId).then(() => {
+       // Optional: You could view.focus() here if you want
+    })
 
+    // Cleanup
     return () => {
       view.destroy()
       provider.destroy()
-      saveToDatabase.cancel()
+      doc.destroy()
     }
-  }, [documentId, supabase])
+  }, [documentId, supabase, doc]) // Dependencies rely on stable instances
 
   return (
-    <div 
-      ref={editorRef} 
-      style={{ textAlign: 'left' }} 
-    />
+    <div style={{ position: 'relative' }}>
+      <div 
+        ref={editorRef} 
+        style={{ textAlign: 'left' }} 
+      />
+      
+      {/* Status Bar */}
+      <div style={{
+        position: 'fixed',
+        bottom: 20,
+        right: 20,
+        padding: '8px 12px',
+        borderRadius: '20px',
+        backgroundColor: '#333',
+        fontSize: '12px',
+        color: '#aaa',
+        border: '1px solid #444'
+      }}>
+        {status === 'loading' && 'Loading...'}
+        {status === 'saving' && 'Saving...'}
+        {status === 'saved' && lastSaved && `Saved ${lastSaved.toLocaleTimeString()}`}
+        {status === 'error' && <span style={{color: '#ff6b6b'}}>Sync Error</span>}
+      </div>
+    </div>
   )
 }
