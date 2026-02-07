@@ -10,53 +10,81 @@ import { useYjsPersistence } from './hooks/useYjsPersistence'
 
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
+// --- Minimalist Dark Theme ---
+const darkScreenplayTheme = EditorView.theme({
+  "&": { 
+    height: "100vh",
+    backgroundColor: "transparent", // Let the body background shine through
+    color: "#e0e0e0" // Off-white text
+  },
+  ".cm-scroller": { 
+    overflow: "auto",
+    fontFamily: "'Courier Prime', 'Courier', monospace",
+  },
+  ".cm-content": { 
+    caretColor: "white",
+    // 1. Center the text block horizontally
+    margin: "0 auto", 
+    // 2. Set strict width (55ch + padding)
+    maxWidth: "60ch", 
+    paddingLeft: "2.5ch",
+    paddingRight: "2.5ch",
+    // 3. Large vertical padding allows the top/bottom lines to scroll to center
+    paddingTop: "50vh", 
+    paddingBottom: "50vh" 
+  },
+  ".cm-cursor": { 
+    borderLeftColor: "white", 
+    borderLeftWidth: "2px" 
+  },
+  ".cm-gutters": { display: "none" }, // No line numbers
+  ".cm-activeLine": { backgroundColor: "transparent" }, // No highlight on current line
+  ".cm-activeLineGutter": { backgroundColor: "transparent" }
+})
+
 interface Props {
   documentId: string
   supabase: SupabaseClient
 }
 
-// Custom Theme (Unchanged)
-const screenplayTheme = EditorView.theme({
-  "&": { color: "white", backgroundColor: "transparent" },
-  ".cm-gutters": { display: "none !important" },
-  ".cm-activeLine": { backgroundColor: "transparent !important" },
-  ".cm-activeLineGutter": { backgroundColor: "transparent !important" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "white !important" },
-  ".cm-content": { padding: "0" }
-})
-
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
   
-  // 1. Create the Y.Doc instance once per lifecycle
-  const doc = useMemo(() => new Y.Doc(), [])
+  // Create Y.Doc instance (memoized by documentId)
+  const doc = useMemo(() => new Y.Doc(), [documentId])
   
-  // 2. Initialize Persistence Hook
   const { status, lastSaved, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
 
   useEffect(() => {
-    // 3. Connect to Supabase Realtime (Transport)
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Set local awareness (User info)
-    const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
+    // Set local user awareness
     provider.awareness.setLocalStateField('user', {
-      name: 'User ' + Math.floor(Math.random() * 100),
-      color: userColor,
+      name: 'Writer ' + Math.floor(Math.random() * 100),
+      color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
     })
 
-    // 4. Initialize CodeMirror
     const state = EditorState.create({
-      doc: ytext.toString(), // Initially empty until DB loads or peers sync
+      doc: ytext.toString(),
       extensions: [
         basicSetup,
-        screenplayTheme,
+        darkScreenplayTheme,
         yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
+        
+        // --- Typewriter Scroll Logic ---
+        // This forces the editor to keep the cursor away from the top/bottom edges
+        EditorView.scrollMargins.of((view) => {
+          const dom = view.dom;
+          // Calculate half the screen height
+          const halfHeight = dom.clientHeight / 2;
+          // Keep cursor within 10px of the center line if possible
+          return { top: halfHeight - 10, bottom: halfHeight - 10 };
+        }),
+
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            // Trigger debounced save on every keystroke
             saveDocument(documentId)
           }
         })
@@ -68,43 +96,37 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // 5. Load Data (Fire and forget - Yjs handles the merge)
-    loadDocument(documentId).then(() => {
-       // Optional: You could view.focus() here if you want
-    })
+    loadDocument(documentId)
 
-    // Cleanup
     return () => {
       view.destroy()
       provider.destroy()
       doc.destroy()
     }
-  }, [documentId, supabase, doc]) // Dependencies rely on stable instances
+  }, [documentId, supabase, doc, saveDocument, loadDocument])
 
   return (
-    <div style={{ position: 'relative' }}>
+    <>
       <div 
         ref={editorRef} 
-        style={{ textAlign: 'left' }} 
+        style={{ width: '100%', height: '100vh', outline: 'none' }} 
       />
       
-      {/* Status Bar */}
+      {/* Minimal Status Text (Bottom Right) */}
       <div style={{
         position: 'fixed',
         bottom: 20,
         right: 20,
-        padding: '8px 12px',
-        borderRadius: '20px',
-        backgroundColor: '#333',
+        color: '#666', // Dim grey so it doesn't distract
+        fontFamily: 'sans-serif',
         fontSize: '12px',
-        color: '#aaa',
-        border: '1px solid #444'
+        pointerEvents: 'none'
       }}>
         {status === 'loading' && 'Loading...'}
         {status === 'saving' && 'Saving...'}
-        {status === 'saved' && lastSaved && `Saved ${lastSaved.toLocaleTimeString()}`}
-        {status === 'error' && <span style={{color: '#ff6b6b'}}>Sync Error</span>}
+        {status === 'saved' && 'Saved'}
+        {status === 'error' && 'Sync Error'}
       </div>
-    </div>
+    </>
   )
 }

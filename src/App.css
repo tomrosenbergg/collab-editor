@@ -1,68 +1,49 @@
+/* src/App.css */
+
+/* 1. Global Reset for Dark Mode */
+:root {
+  background-color: #1a1a1a; /* The nice dark grey */
+  color: #e0e0e0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #1a1a1a;
+  overflow: hidden; /* Prevent body scroll, let CodeMirror handle it */
+  width: 100vw;
+  height: 100vh;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
 }
 
-/* --- Editor Styling Updates --- */
+/* 2. Remove all component spacing */
+.App {
+  width: 100%;
+  height: 100%;
+}
+
+/* 3. CodeMirror Specific Overrides */
 .cm-editor {
-  /* 1. Use 'box-sizing: content-box' to ensure padding doesn't shrink the 55ch width.
-     2. 'width: 55ch' sets the content area to exactly 55 characters wide.
-  */
-  box-sizing: content-box;
-  width: 55ch; 
-  
-  margin: 0 auto;
-  border: none;
-  outline: none;
-  background-color: transparent;
-  
-  /* Ensure the text doesn't touch the very edge of the browser window on small screens */
-  padding-left: 20px;
-  padding-right: 20px;
+  outline: none !important;
 }
 
-/* We scale the font size up here for readability. */
-.cm-editor .cm-scroller {
-  font-family: 'Courier', 'Courier New', monospace;
-  font-size: 24px; /* Larger, readable size */
-  line-height: 1.2;
+/* Ensure the scrollbar is unobtrusive (optional) */
+::-webkit-scrollbar {
+  width: 8px;
 }
-
-/* Ensure the content area matches the container width */
-.cm-content {
-  min-height: 400px;
-  
-  /* Explicitly set the max-width here as well to force the wrap */
-  max-width: 55ch;
+::-webkit-scrollbar-track {
+  background: #1a1a1a; 
 }
-
-/* ... existing logo styles ... */
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+::-webkit-scrollbar-thumb {
+  background: #333; 
+  border-radius: 4px;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: #444; 
 }

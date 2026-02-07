@@ -237,6 +237,7 @@ export default App
 FILE: src/SupabaseProvider.ts
 ================================================================================
 
+// src/SupabaseProvider.ts
 import * as Y from 'yjs'
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
@@ -255,95 +256,75 @@ export class SupabaseProvider {
 
     this.channel
       .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
-        // Payload comes in as an array of numbers from the broadcast
+        // Apply incoming updates from peers
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
       .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
+        // Apply awareness (cursor) updates
         const update = new Uint8Array(payload)
         applyAwarenessUpdate(this.awareness, update, 'remote')
       })
       .on('broadcast', { event: 'request-sync' }, () => {
+        // If a new peer asks for state, and we are connected, send it
         if (this._isConnected) {
-           const update = Y.encodeStateAsUpdate(doc)
-           this.channel.send({
-             type: 'broadcast',
-             event: 'sync-update',
-             // Broadcasts must use standard arrays (JSON compatible)
-             payload: Array.from(update) 
-           })
+          const update = Y.encodeStateAsUpdate(doc)
+          this.broadcast('sync-update', update)
         }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
+          // Request latest state from peers immediately
           this.channel.send({
             type: 'broadcast',
             event: 'request-sync',
-            payload: {}
+            payload: {},
           })
+        } else {
+          this._isConnected = false
         }
       })
 
+    // Listen to local document updates and broadcast them
     doc.on('update', (update, origin) => {
-      if (origin !== 'remote' && this._isConnected) {
-        this.channel.send({
-          type: 'broadcast',
-          event: 'sync-update',
-          payload: Array.from(update),
-        })
+      if (origin !== 'remote' && origin !== 'db-load' && this._isConnected) {
+        this.broadcast('sync-update', update)
       }
     })
 
+    // Listen to local awareness updates and broadcast them
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
       const update = encodeAwarenessUpdate(this.awareness, changedClients)
-      this.channel.send({
-        type: 'broadcast',
-        event: 'awareness-update',
-        payload: Array.from(update),
-      })
+      this.broadcast('awareness-update', update)
     })
-    
+
+    // Periodic "Soft" Resync (Every 30s instead of 5s to save bandwidth)
+    // This handles cases where a packet might have been dropped.
     this._resyncInterval = setInterval(() => {
-        if (this._isConnected && this.awareness.getStates().size <= 1) {
-            this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
-        }
-    }, 5000)
+      if (this._isConnected && this.awareness.getStates().size > 1) {
+        this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
+      }
+    }, 30000)
   }
 
-  get hasPeers(): boolean {
-    return this.awareness.getStates().size > 1
-  }
-
-  /**
-   * Persists the full Yjs V1 binary state to Supabase using upsert.
-   */
-  async saveStateToSupabase(supabase: SupabaseClient, documentId: string) {
-    const state = Y.encodeStateAsUpdate(this.doc)
-    
-    // CRITICAL FIX: Convert Uint8Array to Postgres Hex String (\x...)
-    // This format is required for 'bytea' columns in Postgres.
-    const hex = Array.from(state)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('')
-    
-    const payload = `\\x${hex}`
-
-    return supabase
-      .from('documents')
-      .upsert({ 
-        id: documentId, 
-        content: payload 
-      })
+  // Helper to send byte arrays
+  private broadcast(event: string, payload: Uint8Array) {
+    this.channel.send({
+      type: 'broadcast',
+      event,
+      payload: Array.from(payload), // Supabase Realtime requires standard arrays
+    })
   }
 
   destroy() {
     if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
-    this.doc.destroy()
     this.awareness.destroy()
+    // NOTE: We do NOT destroy the doc here, as React might still need it
+    // for a split second before unmounting.
   }
 }
 
@@ -514,14 +495,15 @@ button:focus-visible {
 FILE: src/CollaborativeEditor.tsx
 ================================================================================
 
-import { useEffect, useRef } from 'react'
+// src/CollaborativeEditor.tsx
+import { useEffect, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
 import { yCollab } from 'y-codemirror.next'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
-import debounce from 'lodash/debounce'
+import { useYjsPersistence } from './hooks/useYjsPersistence'
 
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
@@ -530,144 +512,49 @@ interface Props {
   supabase: SupabaseClient
 }
 
-// Custom Theme to override CodeMirror defaults
+// Custom Theme (Unchanged)
 const screenplayTheme = EditorView.theme({
-  "&": {
-    color: "white",
-    backgroundColor: "transparent",
-  },
-  // Hide the gutter (line numbers)
-  ".cm-gutters": {
-    display: "none !important"
-  },
-  // Remove active line highlighting
-  ".cm-activeLine": {
-    backgroundColor: "transparent !important"
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "transparent !important"
-  },
-  // Force Cursor to be white
-  ".cm-cursor, .cm-dropCursor": {
-    borderLeftColor: "white !important"
-  },
-  // Ensure the content area matches the container width
-  ".cm-content": {
-    padding: "0" 
-  }
+  "&": { color: "white", backgroundColor: "transparent" },
+  ".cm-gutters": { display: "none !important" },
+  ".cm-activeLine": { backgroundColor: "transparent !important" },
+  ".cm-activeLineGutter": { backgroundColor: "transparent !important" },
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "white !important" },
+  ".cm-content": { padding: "0" }
 })
 
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
+  
+  // 1. Create the Y.Doc instance once per lifecycle
+  const doc = useMemo(() => new Y.Doc(), [])
+  
+  // 2. Initialize Persistence Hook
+  const { status, lastSaved, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
 
   useEffect(() => {
-    const doc = new Y.Doc()
+    // 3. Connect to Supabase Realtime (Transport)
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
+    // Set local awareness (User info)
     const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
     provider.awareness.setLocalStateField('user', {
       name: 'User ' + Math.floor(Math.random() * 100),
       color: userColor,
     })
 
-    // Save to DB (debounced)
-    const saveToDatabase = debounce(() => {
-      provider.saveStateToSupabase(supabase, documentId)
-        .then(({ error }) => {
-          if (!error) console.log('Binary state saved to DB')
-          else console.error('Save error:', error)
-        })
-    }, 2000)
-
-    let receivedPeerData = false
-    const onUpdate = (_update: Uint8Array, origin: any) => {
-      if (origin === 'remote') {
-        receivedPeerData = true
-        console.log('Synced from Peer')
-      }
-    }
-    doc.on('update', onUpdate)
-
-    const initLoad = async () => {
-      console.log('Connecting...')
-      
-      // 1. Handshake: Give peers 2 seconds to respond with live data
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      if (receivedPeerData || ytext.toString().length > 0) {
-        doc.off('update', onUpdate)
-        return 
-      }
-
-      // 2. Fallback: Load from Database
-      console.log('Loading from DB...')
-      const { data, error } = await supabase
-        .from('documents')
-        .select('content')
-        .eq('id', documentId)
-        .maybeSingle()
-
-      if (error) {
-        console.error('Fetch Error:', error)
-      } else if (data?.content) {
-        try {
-          let rawContent = data.content
-          
-          // --- ROBUST DECODING START ---
-          if (typeof rawContent === 'string') {
-            const hex = rawContent.startsWith('\\x') 
-              ? rawContent.slice(2) 
-              : rawContent
-
-            if (/^[0-9a-fA-F]*$/.test(hex)) {
-               const match = hex.match(/.{1,2}/g)
-               if (match) {
-                 rawContent = new Uint8Array(match.map(byte => parseInt(byte, 16)))
-               } else {
-                 rawContent = new Uint8Array([])
-               }
-            } else {
-               try {
-                  const parsed = JSON.parse(rawContent)
-                  if (Array.isArray(parsed)) rawContent = new Uint8Array(parsed)
-               } catch (e) {
-                  console.warn('Content string is neither Hex nor JSON array')
-               }
-            }
-          } 
-          else if (Array.isArray(rawContent)) {
-             rawContent = new Uint8Array(rawContent)
-          }
-          // --- ROBUST DECODING END ---
-
-          if (rawContent instanceof Uint8Array && rawContent.length > 0) {
-            Y.applyUpdate(doc, rawContent, 'initial-db-load')
-            console.log('Loaded from DB')
-          } else {
-            console.log('New Document (Empty DB Content)')
-          }
-        } catch (e) {
-          console.error('Yjs Decoding Error:', e)
-        }
-      } else {
-        console.log('New Document')
-      }
-      doc.off('update', onUpdate)
-    }
-
-    initLoad()
-
+    // 4. Initialize CodeMirror
     const state = EditorState.create({
-      doc: ytext.toString(),
+      doc: ytext.toString(), // Initially empty until DB loads or peers sync
       extensions: [
         basicSetup,
-        screenplayTheme, // Apply custom visual theme
+        screenplayTheme,
         yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            saveToDatabase()
+            // Trigger debounced save on every keystroke
+            saveDocument(documentId)
           }
         })
       ],
@@ -678,21 +565,44 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // Auto-focus the editor immediately
-    view.focus()
+    // 5. Load Data (Fire and forget - Yjs handles the merge)
+    loadDocument(documentId).then(() => {
+       // Optional: You could view.focus() here if you want
+    })
 
+    // Cleanup
     return () => {
       view.destroy()
       provider.destroy()
-      saveToDatabase.cancel()
+      doc.destroy()
     }
-  }, [documentId, supabase])
+  }, [documentId, supabase, doc]) // Dependencies rely on stable instances
 
   return (
-    <div 
-      ref={editorRef} 
-      style={{ textAlign: 'left' }} 
-    />
+    <div style={{ position: 'relative' }}>
+      <div 
+        ref={editorRef} 
+        style={{ textAlign: 'left' }} 
+      />
+      
+      {/* Status Bar */}
+      <div style={{
+        position: 'fixed',
+        bottom: 20,
+        right: 20,
+        padding: '8px 12px',
+        borderRadius: '20px',
+        backgroundColor: '#333',
+        fontSize: '12px',
+        color: '#aaa',
+        border: '1px solid #444'
+      }}>
+        {status === 'loading' && 'Loading...'}
+        {status === 'saving' && 'Saving...'}
+        {status === 'saved' && lastSaved && `Saved ${lastSaved.toLocaleTimeString()}`}
+        {status === 'error' && <span style={{color: '#ff6b6b'}}>Sync Error</span>}
+      </div>
+    </div>
   )
 }
 
@@ -1268,3 +1178,98 @@ class FountainTokenizer {
 const tokenizer = new FountainTokenizer();
 export const Fountain = new ExternalTokenizer(tokenizer.token.bind(tokenizer));
 
+
+================================================================================
+FILE: src/hooks/useYjsPersistence.ts
+================================================================================
+
+// src/hooks/useYjsPersistence.ts
+import { useState, useCallback } from 'react'
+import * as Y from 'yjs'
+import { SupabaseClient } from '@supabase/supabase-js'
+import debounce from 'lodash/debounce'
+
+type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
+
+export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
+  const [status, setStatus] = useState<SaveStatus>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+
+  // 1. Robust Hex String Parser for Postgres 'bytea'
+  const parsePostgresHex = (hexContent: string): Uint8Array => {
+    // Remove '\x' prefix if present (Postgres standard)
+    const cleanHex = hexContent.startsWith('\\x') ? hexContent.slice(2) : hexContent
+    
+    // Safety check for valid hex
+    if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
+      throw new Error('Invalid Hex String from Database')
+    }
+
+    // Convert hex pairs to integers
+    const match = cleanHex.match(/.{1,2}/g)
+    if (!match) return new Uint8Array([])
+    
+    return new Uint8Array(match.map((byte) => parseInt(byte, 16)))
+  }
+
+  // 2. Load Initial State (Optimistic)
+  const loadDocument = useCallback(async (documentId: string) => {
+    setStatus('loading')
+    try {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('content')
+        .eq('id', documentId)
+        .maybeSingle()
+
+      if (error) throw error
+
+      if (data?.content) {
+        // Apply DB state immediately
+        const update = parsePostgresHex(data.content)
+        if (update.length > 0) {
+          Y.applyUpdate(doc, update, 'db-load')
+        }
+      } else {
+        console.log('New Document created')
+      }
+      setStatus('saved')
+    } catch (e) {
+      console.error('Failed to load document:', e)
+      setStatus('error')
+    }
+  }, [supabase, doc])
+
+  // 3. Debounced Save Function
+  const saveDocument = useCallback(
+    debounce(async (documentId: string) => {
+      setStatus('saving')
+      
+      try {
+        const state = Y.encodeStateAsUpdate(doc)
+        
+        // Convert to Postgres HEX format (\x...)
+        const hex = Array.from(state)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('')
+        
+        const payload = `\\x${hex}`
+
+        const { error } = await supabase
+          .from('documents')
+          .upsert({ id: documentId, content: payload })
+
+        if (error) throw error
+        
+        setLastSaved(new Date())
+        setStatus('saved')
+      } catch (e) {
+        console.error('Failed to save document:', e)
+        setStatus('error')
+      }
+    }, 2000), // 2 second debounce
+    [supabase, doc]
+  )
+
+  return { status, lastSaved, loadDocument, saveDocument }
+}
