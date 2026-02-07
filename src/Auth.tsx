@@ -34,37 +34,36 @@ export const Auth = ({ supabase }: Props) => {
   }
 
   return (
-    <div style={{ 
-      display: 'flex', flexDirection: 'column', alignItems: 'center', 
-      justifyContent: 'center', height: '100vh', color: '#e0e0e0', fontFamily: 'sans-serif' 
-    }}>
-      <h1 style={{ fontFamily: 'Courier Prime, monospace' }}>Screenplay Editor</h1>
-      <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '300px' }}>
+    <div className="auth-container">
+      <h1 className="auth-title">Screenplay Editor</h1>
+      
+      <form onSubmit={handleAuth} className="auth-form">
         <input
+          className="auth-input"
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: '10px', background: '#333', border: 'none', color: 'white' }}
+          required
         />
         <input
+          className="auth-input"
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: '10px', background: '#333', border: 'none', color: 'white' }}
+          required
         />
-        <button type="submit" disabled={loading} style={{ 
-          padding: '10px', cursor: 'pointer', background: '#30bced', border: 'none', color: 'black', fontWeight: 'bold' 
-        }}>
+        <button type="submit" disabled={loading} className="auth-button">
           {loading ? 'Processing...' : (isLogin ? 'Log In' : 'Sign Up')}
         </button>
       </form>
-      <p style={{ marginTop: '1rem', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }} 
-         onClick={() => setIsLogin(!isLogin)}>
+
+      <p className="auth-toggle" onClick={() => setIsLogin(!isLogin)}>
         {isLogin ? "Need an account? Sign Up" : "Have an account? Log In"}
       </p>
-      {msg && <p style={{ color: '#ffbc42', marginTop: '1rem' }}>{msg}</p>}
+
+      {msg && <p className="auth-error">{msg}</p>}
     </div>
   )
 }

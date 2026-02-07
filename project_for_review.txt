@@ -281,6 +281,7 @@ import { createClient, type Session } from '@supabase/supabase-js'
 import { CollaborativeEditor } from './CollaborativeEditor'
 import { Auth } from './Auth'
 import { Dashboard } from './Dashboard'
+import { Menu } from './Menu' // <--- IMPORT ADDED
 import './App.css'
 
 const supabase = createClient(
@@ -297,7 +298,7 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session) setShowDashboard(true) // Show dashboard on login
+      if (session) setShowDashboard(true) 
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -306,31 +307,13 @@ function App() {
         setCurrentDocId(null)
         setShowDashboard(false)
       } else {
-        // If we just logged in and have no doc open, show dashboard
         if (!currentDocId) setShowDashboard(true)
       }
     })
     return () => subscription.unsubscribe()
   }, [currentDocId])
 
-  // Context Menu Implementation (Minimalist)
-  const Menu = () => (
-    <div style={{ 
-      position: 'fixed', top: 20, left: 20, zIndex: 50,
-      display: 'flex', gap: '10px'
-    }}>
-      <button 
-        onClick={() => setShowDashboard(true)}
-        style={{ 
-          background: '#333', color: 'white', border: 'none', padding: '8px 12px', 
-          borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
-        }}
-      >
-        ≡ Files
-      </button>
-      {/* Add Rename or other menu items here if needed */}
-    </div>
-  )
+  // REMOVED: Inline Menu component definition was here
 
   if (!session) {
     return <Auth supabase={supabase} />
@@ -338,13 +321,13 @@ function App() {
 
   return (
     <div className="App">
-      {/* Minimal Context Menu */}
-      <Menu />
+      {/* Stable Menu Component */}
+      <Menu onOpenDashboard={() => setShowDashboard(true)} />
 
       {/* Editor - Key forces remount when doc changes */}
       {currentDocId ? (
         <CollaborativeEditor 
-          key={currentDocId} // CRITICAL: Forces editor to reset when ID changes
+          key={currentDocId} 
           documentId={currentDocId} 
           supabase={supabase} 
         />
@@ -366,7 +349,6 @@ function App() {
             setShowDashboard(false)
           }}
           onClose={() => {
-            // Only allow closing if a document is already open, otherwise keep it open
             if (currentDocId) setShowDashboard(false)
           }}
         />
@@ -385,6 +367,26 @@ import * as Y from 'yjs'
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
 
+/**
+ * 1. Performance Helpers: Base64 Encoding/Decoding
+ * Reduces network payload size by ~30% compared to raw JSON number arrays.
+ */
+const toBase64 = (bytes: Uint8Array): string => {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64')
+  }
+  const binString = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join('')
+  return btoa(binString)
+}
+
+const fromBase64 = (str: string): Uint8Array => {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(str, 'base64'))
+  }
+  const binString = atob(str)
+  return Uint8Array.from(binString, (m) => m.codePointAt(0)!)
+}
+
 export class SupabaseProvider {
   doc: Y.Doc
   channel: RealtimeChannel
@@ -398,30 +400,26 @@ export class SupabaseProvider {
     this.channel = supabase.channel(channelId)
 
     this.channel
-      // 1. Handle Awareness (Cursors/Presence)
+      // 2. Optimized Listeners: Expect Base64 Strings
       .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
-        applyAwarenessUpdate(this.awareness, new Uint8Array(payload), 'remote')
+        // Payload comes in as a Base64 string now
+        const update = fromBase64(payload)
+        applyAwarenessUpdate(this.awareness, update, 'remote')
       })
-      
-      // 2. Sync Step 1: Remote peer sent their State Vector
-      // We calculate what they are missing and send ONLY that (Sync Step 2)
+
       .on('broadcast', { event: 'sync-step-1' }, ({ payload }) => {
-        const remoteVector = new Uint8Array(payload)
+        const remoteVector = fromBase64(payload)
         const update = Y.encodeStateAsUpdate(doc, remoteVector)
-        // Only broadcast if there is actually a difference
         if (update.length > 0) {
-            this.broadcast('sync-step-2', update)
+          this.broadcast('sync-step-2', update)
         }
       })
 
-      // 3. Sync Step 2: Remote peer sent an Update
-      // We apply this update to our local document
       .on('broadcast', { event: 'sync-step-2' }, ({ payload }) => {
-        const update = new Uint8Array(payload)
+        const update = fromBase64(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
 
-      // 4. Connection Status
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
@@ -431,15 +429,13 @@ export class SupabaseProvider {
         }
       })
 
-    // 5. Listen to Local Changes -> Broadcast Update (Step 2)
+    // 3. Local Changes: Encode before Broadcast
     doc.on('update', (update, origin) => {
       if (origin !== 'remote' && origin !== 'db-load' && this._isConnected) {
-        // We broadcast the update directly to peers
         this.broadcast('sync-step-2', update)
       }
     })
 
-    // 6. Listen to Local Awareness Changes
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
@@ -447,7 +443,7 @@ export class SupabaseProvider {
       this.broadcast('awareness-update', update)
     })
 
-    // 7. Periodic Health Check / Soft Resync (Every 30s)
+    // Periodic Sync (Keepalive)
     this._resyncInterval = setInterval(() => {
       if (this._isConnected && this.awareness.getStates().size > 0) {
         this.initSync()
@@ -455,19 +451,22 @@ export class SupabaseProvider {
     }, 30000)
   }
 
-  // Initiates the sync protocol by sending our local State Vector
   private initSync() {
-    // We send our State Vector (fingerprint) so peers know what we need
     const vector = Y.encodeStateVector(this.doc)
     this.broadcast('sync-step-1', vector)
   }
 
+  // 4. Optimized Broadcast: Send Base64 String
   private broadcast(event: string, payload: Uint8Array) {
     if (!this._isConnected) return
+    
+    // Convert Uint8Array -> Base64 String
+    const base64Payload = toBase64(payload)
+
     this.channel.send({
       type: 'broadcast',
       event,
-      payload: Array.from(payload),
+      payload: base64Payload, 
     })
   }
 
@@ -475,8 +474,6 @@ export class SupabaseProvider {
     if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
     this.awareness.destroy()
-    // DOC LIFECYCLE: We do NOT destroy the doc here.
-    // The doc is owned by the React Component state.
   }
 }
 
@@ -697,6 +694,36 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+================================================================================
+FILE: src/Menu.tsx
+================================================================================
+
+import React from 'react'
+
+interface MenuProps {
+  onOpenDashboard: () => void
+}
+
+export const Menu = ({ onOpenDashboard }: MenuProps) => {
+  return (
+    <div style={{ 
+      position: 'fixed', top: 20, left: 20, zIndex: 50,
+      display: 'flex', gap: '10px'
+    }}>
+      <button 
+        onClick={onOpenDashboard}
+        style={{ 
+          background: '#333', color: 'white', border: 'none', padding: '8px 12px', 
+          borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
+        }}
+      >
+        ≡ Files
+      </button>
+      {/* You can add Rename/Export buttons here later */}
+    </div>
+  )
 }
 
 ================================================================================
