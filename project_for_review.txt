@@ -237,7 +237,6 @@ export default App
 FILE: src/SupabaseProvider.ts
 ================================================================================
 
-// src/SupabaseProvider.ts
 import * as Y from 'yjs'
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
@@ -255,45 +254,48 @@ export class SupabaseProvider {
     this.channel = supabase.channel(channelId)
 
     this.channel
-      .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
-        // Apply incoming updates from peers
+      // 1. Handle Awareness (Cursors/Presence)
+      .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
+        applyAwarenessUpdate(this.awareness, new Uint8Array(payload), 'remote')
+      })
+      
+      // 2. Sync Step 1: Remote peer sent their State Vector
+      // We calculate what they are missing and send ONLY that (Sync Step 2)
+      .on('broadcast', { event: 'sync-step-1' }, ({ payload }) => {
+        const remoteVector = new Uint8Array(payload)
+        const update = Y.encodeStateAsUpdate(doc, remoteVector)
+        // Only broadcast if there is actually a difference
+        if (update.length > 0) {
+            this.broadcast('sync-step-2', update)
+        }
+      })
+
+      // 3. Sync Step 2: Remote peer sent an Update
+      // We apply this update to our local document
+      .on('broadcast', { event: 'sync-step-2' }, ({ payload }) => {
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
-      .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
-        // Apply awareness (cursor) updates
-        const update = new Uint8Array(payload)
-        applyAwarenessUpdate(this.awareness, update, 'remote')
-      })
-      .on('broadcast', { event: 'request-sync' }, () => {
-        // If a new peer asks for state, and we are connected, send it
-        if (this._isConnected) {
-          const update = Y.encodeStateAsUpdate(doc)
-          this.broadcast('sync-update', update)
-        }
-      })
+
+      // 4. Connection Status
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
-          // Request latest state from peers immediately
-          this.channel.send({
-            type: 'broadcast',
-            event: 'request-sync',
-            payload: {},
-          })
+          this.initSync()
         } else {
           this._isConnected = false
         }
       })
 
-    // Listen to local document updates and broadcast them
+    // 5. Listen to Local Changes -> Broadcast Update (Step 2)
     doc.on('update', (update, origin) => {
       if (origin !== 'remote' && origin !== 'db-load' && this._isConnected) {
-        this.broadcast('sync-update', update)
+        // We broadcast the update directly to peers
+        this.broadcast('sync-step-2', update)
       }
     })
 
-    // Listen to local awareness updates and broadcast them
+    // 6. Listen to Local Awareness Changes
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
@@ -301,21 +303,27 @@ export class SupabaseProvider {
       this.broadcast('awareness-update', update)
     })
 
-    // Periodic "Soft" Resync (Every 30s instead of 5s to save bandwidth)
-    // This handles cases where a packet might have been dropped.
+    // 7. Periodic Health Check / Soft Resync (Every 30s)
     this._resyncInterval = setInterval(() => {
-      if (this._isConnected && this.awareness.getStates().size > 1) {
-        this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
+      if (this._isConnected && this.awareness.getStates().size > 0) {
+        this.initSync()
       }
     }, 30000)
   }
 
-  // Helper to send byte arrays
+  // Initiates the sync protocol by sending our local State Vector
+  private initSync() {
+    // We send our State Vector (fingerprint) so peers know what we need
+    const vector = Y.encodeStateVector(this.doc)
+    this.broadcast('sync-step-1', vector)
+  }
+
   private broadcast(event: string, payload: Uint8Array) {
+    if (!this._isConnected) return
     this.channel.send({
       type: 'broadcast',
       event,
-      payload: Array.from(payload), // Supabase Realtime requires standard arrays
+      payload: Array.from(payload),
     })
   }
 
@@ -323,8 +331,8 @@ export class SupabaseProvider {
     if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
     this.awareness.destroy()
-    // NOTE: We do NOT destroy the doc here, as React might still need it
-    // for a split second before unmounting.
+    // DOC LIFECYCLE: We do NOT destroy the doc here.
+    // The doc is owned by the React Component state.
   }
 }
 
@@ -348,155 +356,86 @@ createRoot(document.getElementById('root')!).render(
 FILE: src/App.css
 ================================================================================
 
+/* src/App.css */
+
+/* 1. Global Reset for Dark Mode */
+:root {
+  background-color: #1a1a1a; /* The nice dark grey */
+  color: #e0e0e0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #1a1a1a;
+  overflow: hidden; /* Prevent body scroll, let CodeMirror handle it */
+  width: 100vw;
+  height: 100vh;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
 }
 
-/* --- Editor Styling Updates --- */
+/* 2. Remove all component spacing */
+.App {
+  width: 100%;
+  height: 100%;
+}
+
+/* 3. CodeMirror Specific Overrides */
 .cm-editor {
-  /* 1. Use 'box-sizing: content-box' to ensure padding doesn't shrink the 55ch width.
-     2. 'width: 55ch' sets the content area to exactly 55 characters wide.
-  */
-  box-sizing: content-box;
-  width: 55ch; 
-  
-  margin: 0 auto;
-  border: none;
-  outline: none;
-  background-color: transparent;
-  
-  /* Ensure the text doesn't touch the very edge of the browser window on small screens */
-  padding-left: 20px;
-  padding-right: 20px;
+  outline: none !important;
 }
 
-/* We scale the font size up here for readability. */
-.cm-editor .cm-scroller {
-  font-family: 'Courier', 'Courier New', monospace;
-  font-size: 24px; /* Larger, readable size */
-  line-height: 1.2;
+/* Ensure the scrollbar is unobtrusive (optional) */
+::-webkit-scrollbar {
+  width: 8px;
 }
-
-/* Ensure the content area matches the container width */
-.cm-content {
-  min-height: 400px;
-  
-  /* Explicitly set the max-width here as well to force the wrap */
-  max-width: 55ch;
+::-webkit-scrollbar-track {
+  background: #1a1a1a; 
 }
-
-/* ... existing logo styles ... */
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+::-webkit-scrollbar-thumb {
+  background: #333; 
+  border-radius: 4px;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: #444; 
 }
 
 ================================================================================
 FILE: src/index.css
 ================================================================================
 
+/* src/index.css */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Courier Prime', 'Courier', monospace;
+  font-size: 18px; /* Comfortable writing size */
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color-scheme: dark; /* Tells browser to use dark defaults */
+  
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
 }
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
 
 ================================================================================
 FILE: src/CollaborativeEditor.tsx
 ================================================================================
 
-// src/CollaborativeEditor.tsx
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import * as Y from 'yjs'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
@@ -507,53 +446,66 @@ import { useYjsPersistence } from './hooks/useYjsPersistence'
 
 const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
 
+// ... (Theme code remains exactly the same as previous) ...
+const darkScreenplayTheme = EditorView.theme({
+  "&": { height: "100vh", backgroundColor: "transparent", color: "#e0e0e0" },
+  ".cm-scroller": { overflow: "auto", fontFamily: "'Courier Prime', 'Courier', monospace" },
+  ".cm-content": { 
+    caretColor: "white", margin: "0 auto", maxWidth: "60ch", 
+    paddingLeft: "2.5ch", paddingRight: "2.5ch", paddingTop: "50vh", paddingBottom: "50vh" 
+  },
+  ".cm-cursor": { borderLeftColor: "white", borderLeftWidth: "2px" },
+  ".cm-gutters": { display: "none" },
+  ".cm-activeLine": { backgroundColor: "transparent" },
+  ".cm-activeLineGutter": { backgroundColor: "transparent" }
+})
+
 interface Props {
   documentId: string
   supabase: SupabaseClient
 }
 
-// Custom Theme (Unchanged)
-const screenplayTheme = EditorView.theme({
-  "&": { color: "white", backgroundColor: "transparent" },
-  ".cm-gutters": { display: "none !important" },
-  ".cm-activeLine": { backgroundColor: "transparent !important" },
-  ".cm-activeLineGutter": { backgroundColor: "transparent !important" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "white !important" },
-  ".cm-content": { padding: "0" }
-})
-
 export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
   
-  // 1. Create the Y.Doc instance once per lifecycle
-  const doc = useMemo(() => new Y.Doc(), [])
-  
-  // 2. Initialize Persistence Hook
-  const { status, lastSaved, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
+  // LIFECYCLE FIX:
+  // We use useState to lazily create the Y.Doc once.
+  // We DO NOT destroy it in useEffect cleanup to prevent strict mode crashes.
+  // JS Garbage Collection will handle it when the component is truly discarded.
+  const [doc] = useState(() => new Y.Doc())
+
+  const { status, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
 
   useEffect(() => {
-    // 3. Connect to Supabase Realtime (Transport)
+    // 1. Initialize Provider
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Set local awareness (User info)
-    const userColor = USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)]
+    // 2. Set Random User Info
     provider.awareness.setLocalStateField('user', {
-      name: 'User ' + Math.floor(Math.random() * 100),
-      color: userColor,
+      name: 'Writer ' + Math.floor(Math.random() * 100),
+      color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
     })
 
-    // 4. Initialize CodeMirror
+    // 3. Configure Editor
     const state = EditorState.create({
-      doc: ytext.toString(), // Initially empty until DB loads or peers sync
+      doc: ytext.toString(), // Initial text (sync logic will update this shortly)
       extensions: [
         basicSetup,
-        screenplayTheme,
-        yCollab(ytext, provider.awareness),
+        darkScreenplayTheme,
+        yCollab(ytext, provider.awareness), // Bind Yjs to CodeMirror
         EditorView.lineWrapping,
+        
+        // Typewriter Scrolling
+        EditorView.scrollMargins.of((view) => {
+          const dom = view.dom;
+          const halfHeight = dom.clientHeight / 2;
+          return { top: halfHeight - 10, bottom: halfHeight - 10 };
+        }),
+
+        // Save Trigger
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            // Trigger debounced save on every keystroke
             saveDocument(documentId)
           }
         })
@@ -565,44 +517,35 @@ export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
       parent: editorRef.current!,
     })
 
-    // 5. Load Data (Fire and forget - Yjs handles the merge)
-    loadDocument(documentId).then(() => {
-       // Optional: You could view.focus() here if you want
-    })
+    // 4. Load initial state from DB
+    loadDocument(documentId)
 
-    // Cleanup
+    // 5. Cleanup
     return () => {
       view.destroy()
       provider.destroy()
-      doc.destroy()
+      // NOTE: We specifically do NOT destroy 'doc' here.
     }
-  }, [documentId, supabase, doc]) // Dependencies rely on stable instances
+  }, [documentId, supabase, doc, saveDocument, loadDocument])
 
   return (
-    <div style={{ position: 'relative' }}>
+    <>
       <div 
         ref={editorRef} 
-        style={{ textAlign: 'left' }} 
+        style={{ width: '100%', height: '100vh', outline: 'none' }} 
       />
       
-      {/* Status Bar */}
+      {/* Status Indicator */}
       <div style={{
-        position: 'fixed',
-        bottom: 20,
-        right: 20,
-        padding: '8px 12px',
-        borderRadius: '20px',
-        backgroundColor: '#333',
-        fontSize: '12px',
-        color: '#aaa',
-        border: '1px solid #444'
+        position: 'fixed', bottom: 20, right: 20,
+        color: '#666', fontFamily: 'sans-serif', fontSize: '12px', pointerEvents: 'none'
       }}>
         {status === 'loading' && 'Loading...'}
         {status === 'saving' && 'Saving...'}
-        {status === 'saved' && lastSaved && `Saved ${lastSaved.toLocaleTimeString()}`}
-        {status === 'error' && <span style={{color: '#ff6b6b'}}>Sync Error</span>}
+        {status === 'saved' && 'Saved'}
+        {status === 'error' && 'Sync Error'}
       </div>
-    </div>
+    </>
   )
 }
 
@@ -1183,8 +1126,7 @@ export const Fountain = new ExternalTokenizer(tokenizer.token.bind(tokenizer));
 FILE: src/hooks/useYjsPersistence.ts
 ================================================================================
 
-// src/hooks/useYjsPersistence.ts
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
 import debounce from 'lodash/debounce'
@@ -1193,26 +1135,17 @@ type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
 
 export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
   const [status, setStatus] = useState<SaveStatus>('idle')
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
-
-  // 1. Robust Hex String Parser for Postgres 'bytea'
+  const isLoaded = useRef(false)
+  
+  // Parse Postgres HEX format (\x0123...)
   const parsePostgresHex = (hexContent: string): Uint8Array => {
-    // Remove '\x' prefix if present (Postgres standard)
     const cleanHex = hexContent.startsWith('\\x') ? hexContent.slice(2) : hexContent
-    
-    // Safety check for valid hex
-    if (!/^[0-9a-fA-F]*$/.test(cleanHex)) {
-      throw new Error('Invalid Hex String from Database')
-    }
-
-    // Convert hex pairs to integers
+    if (!/^[0-9a-fA-F]*$/.test(cleanHex)) return new Uint8Array([])
     const match = cleanHex.match(/.{1,2}/g)
     if (!match) return new Uint8Array([])
-    
     return new Uint8Array(match.map((byte) => parseInt(byte, 16)))
   }
 
-  // 2. Load Initial State (Optimistic)
   const loadDocument = useCallback(async (documentId: string) => {
     setStatus('loading')
     try {
@@ -1225,14 +1158,13 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
       if (error) throw error
 
       if (data?.content) {
-        // Apply DB state immediately
         const update = parsePostgresHex(data.content)
         if (update.length > 0) {
+          // 'db-load' origin prevents this from being broadcasted back to peers unnecessarily
           Y.applyUpdate(doc, update, 'db-load')
         }
-      } else {
-        console.log('New Document created')
       }
+      isLoaded.current = true
       setStatus('saved')
     } catch (e) {
       console.error('Failed to load document:', e)
@@ -1240,28 +1172,30 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
     }
   }, [supabase, doc])
 
-  // 3. Debounced Save Function
   const saveDocument = useCallback(
     debounce(async (documentId: string) => {
+      // SAFETY: Don't save if we haven't loaded yet (prevents overwriting DB with empty init state)
+      if (!isLoaded.current) return 
+
       setStatus('saving')
-      
       try {
         const state = Y.encodeStateAsUpdate(doc)
         
-        // Convert to Postgres HEX format (\x...)
+        // Convert to HEX for Postgres
         const hex = Array.from(state)
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('')
         
-        const payload = `\\x${hex}`
-
         const { error } = await supabase
           .from('documents')
-          .upsert({ id: documentId, content: payload })
+          .upsert({ 
+            id: documentId, 
+            content: `\\x${hex}`,
+            updated_at: new Date().toISOString() // Assuming you have this column
+          })
 
         if (error) throw error
         
-        setLastSaved(new Date())
         setStatus('saved')
       } catch (e) {
         console.error('Failed to save document:', e)
@@ -1271,5 +1205,5 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
     [supabase, doc]
   )
 
-  return { status, lastSaved, loadDocument, saveDocument }
+  return { status, loadDocument, saveDocument }
 }

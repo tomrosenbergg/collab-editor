@@ -1,4 +1,3 @@
-// src/SupabaseProvider.ts
 import * as Y from 'yjs'
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
@@ -16,45 +15,48 @@ export class SupabaseProvider {
     this.channel = supabase.channel(channelId)
 
     this.channel
-      .on('broadcast', { event: 'sync-update' }, ({ payload }) => {
-        // Apply incoming updates from peers
+      // 1. Handle Awareness (Cursors/Presence)
+      .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
+        applyAwarenessUpdate(this.awareness, new Uint8Array(payload), 'remote')
+      })
+      
+      // 2. Sync Step 1: Remote peer sent their State Vector
+      // We calculate what they are missing and send ONLY that (Sync Step 2)
+      .on('broadcast', { event: 'sync-step-1' }, ({ payload }) => {
+        const remoteVector = new Uint8Array(payload)
+        const update = Y.encodeStateAsUpdate(doc, remoteVector)
+        // Only broadcast if there is actually a difference
+        if (update.length > 0) {
+            this.broadcast('sync-step-2', update)
+        }
+      })
+
+      // 3. Sync Step 2: Remote peer sent an Update
+      // We apply this update to our local document
+      .on('broadcast', { event: 'sync-step-2' }, ({ payload }) => {
         const update = new Uint8Array(payload)
         Y.applyUpdate(doc, update, 'remote')
       })
-      .on('broadcast', { event: 'awareness-update' }, ({ payload }) => {
-        // Apply awareness (cursor) updates
-        const update = new Uint8Array(payload)
-        applyAwarenessUpdate(this.awareness, update, 'remote')
-      })
-      .on('broadcast', { event: 'request-sync' }, () => {
-        // If a new peer asks for state, and we are connected, send it
-        if (this._isConnected) {
-          const update = Y.encodeStateAsUpdate(doc)
-          this.broadcast('sync-update', update)
-        }
-      })
+
+      // 4. Connection Status
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           this._isConnected = true
-          // Request latest state from peers immediately
-          this.channel.send({
-            type: 'broadcast',
-            event: 'request-sync',
-            payload: {},
-          })
+          this.initSync()
         } else {
           this._isConnected = false
         }
       })
 
-    // Listen to local document updates and broadcast them
+    // 5. Listen to Local Changes -> Broadcast Update (Step 2)
     doc.on('update', (update, origin) => {
       if (origin !== 'remote' && origin !== 'db-load' && this._isConnected) {
-        this.broadcast('sync-update', update)
+        // We broadcast the update directly to peers
+        this.broadcast('sync-step-2', update)
       }
     })
 
-    // Listen to local awareness updates and broadcast them
+    // 6. Listen to Local Awareness Changes
     this.awareness.on('update', ({ added, updated, removed }) => {
       if (!this._isConnected) return
       const changedClients = added.concat(updated).concat(removed)
@@ -62,21 +64,27 @@ export class SupabaseProvider {
       this.broadcast('awareness-update', update)
     })
 
-    // Periodic "Soft" Resync (Every 30s instead of 5s to save bandwidth)
-    // This handles cases where a packet might have been dropped.
+    // 7. Periodic Health Check / Soft Resync (Every 30s)
     this._resyncInterval = setInterval(() => {
-      if (this._isConnected && this.awareness.getStates().size > 1) {
-        this.channel.send({ type: 'broadcast', event: 'request-sync', payload: {} })
+      if (this._isConnected && this.awareness.getStates().size > 0) {
+        this.initSync()
       }
     }, 30000)
   }
 
-  // Helper to send byte arrays
+  // Initiates the sync protocol by sending our local State Vector
+  private initSync() {
+    // We send our State Vector (fingerprint) so peers know what we need
+    const vector = Y.encodeStateVector(this.doc)
+    this.broadcast('sync-step-1', vector)
+  }
+
   private broadcast(event: string, payload: Uint8Array) {
+    if (!this._isConnected) return
     this.channel.send({
       type: 'broadcast',
       event,
-      payload: Array.from(payload), // Supabase Realtime requires standard arrays
+      payload: Array.from(payload),
     })
   }
 
@@ -84,7 +92,7 @@ export class SupabaseProvider {
     if (this._resyncInterval) clearInterval(this._resyncInterval)
     this.channel.unsubscribe()
     this.awareness.destroy()
-    // NOTE: We do NOT destroy the doc here, as React might still need it
-    // for a split second before unmounting.
+    // DOC LIFECYCLE: We do NOT destroy the doc here.
+    // The doc is owned by the React Component state.
   }
 }
