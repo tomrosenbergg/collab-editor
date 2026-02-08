@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
 import debounce from 'lodash/debounce'
@@ -48,38 +48,42 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
     }
   }, [supabase, doc])
 
-  const saveDocument = useCallback(
-    debounce(async (documentId: string) => {
-      if (!isLoaded.current) return 
+  const debouncedSave = useMemo(
+    () =>
+      debounce(async (documentId: string) => {
+        if (!isLoaded.current) return
 
-      setStatus('saving')
-      try {
-        const state = Y.encodeStateAsUpdate(doc)
-        
-        // Convert to HEX for Postgres bytea
-        const hex = Array.from(state)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('')
-        
-        // We only update content and timestamp
-        const { error } = await supabase
-          .from('documents')
-          .update({ 
-            content: `\\x${hex}`,
-            updated_at: new Date().toISOString()
+        setStatus('saving')
+        try {
+          const state = Y.encodeStateAsUpdate(doc)
+
+          // Convert to HEX for Postgres bytea
+          const hex = Array.from(state)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('')
+
+          const { error } = await supabase.rpc('update_document_content', {
+            p_document_id: documentId,
+            p_content_hex: hex,
           })
-          .eq('id', documentId)
 
-        if (error) throw error
-        
-        setStatus('saved')
-      } catch (e) {
-        console.error('Failed to save document:', e)
-        setStatus('error')
-      }
-    }, 2000), 
+          if (error) throw error
+
+          setStatus('saved')
+        } catch (e) {
+          console.error('Failed to save document:', e)
+          setStatus('error')
+        }
+      }, 2000),
     [supabase, doc]
   )
 
-  return { status, loadDocument, saveDocument }
+  const saveDocument = useCallback(
+    (documentId: string) => {
+      debouncedSave(documentId)
+    },
+    [debouncedSave]
+  )
+
+  return { status, loadDocument, saveDocument, cancelSave: debouncedSave.cancel }
 }

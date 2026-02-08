@@ -6,6 +6,7 @@ import { yCollab } from 'y-codemirror.next'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
+import { fountainLanguage, fountainLineFormatting } from './parser/fountainSupport'
 
 // --- Theme Configuration ---
 const darkScreenplayTheme = EditorView.theme({
@@ -38,7 +39,7 @@ export const CollaborativeEditor = ({
 }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
   const [doc] = useState(() => new Y.Doc())
-  const { status, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
+  const { status, loadDocument, saveDocument, cancelSave } = useYjsPersistence(supabase, doc)
   
   const [permissionLoaded, setPermissionLoaded] = useState(false)
   const [isReadOnly, setIsReadOnly] = useState(false)
@@ -122,7 +123,24 @@ export const CollaborativeEditor = ({
   }, [documentId, currentUserEmail])
 
 
-  // 2. Initialize Editor
+  // 2. Persist local changes only
+  useEffect(() => {
+    if (!permissionLoaded || accessDenied) return
+
+    const handleUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (isReadOnly) return
+      if (origin === 'remote' || origin === 'db-load') return
+      saveDocument(documentId)
+    }
+
+    doc.on('update', handleUpdate)
+    return () => {
+      doc.off('update', handleUpdate)
+      cancelSave()
+    }
+  }, [doc, documentId, isReadOnly, permissionLoaded, accessDenied, saveDocument, cancelSave])
+
+  // 3. Initialize Editor
   useEffect(() => {
     if (!permissionLoaded || accessDenied) return; 
 
@@ -140,6 +158,8 @@ export const CollaborativeEditor = ({
       extensions: [
         basicSetup,
         darkScreenplayTheme,
+        fountainLanguage,
+        fountainLineFormatting,
         // DYNAMIC READ ONLY MODE
         EditorState.readOnly.of(isReadOnly),
         yCollab(ytext, provider.awareness),
@@ -150,13 +170,6 @@ export const CollaborativeEditor = ({
           const dom = view.dom;
           const halfHeight = dom.clientHeight / 2;
           return { top: halfHeight - 10, bottom: halfHeight - 10 };
-        }),
-
-        // Save on changes (if allowed)
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged && !isReadOnly) {
-            saveDocument(documentId)
-          }
         })
       ],
     })

@@ -534,3 +534,49 @@ body {
 .google-done-btn:hover {
   opacity: 0.9;
 }
+
+/* =========================================
+   FOUNTAIN FORMATTING
+   ========================================= */
+.cm-line.cm-fountain-scene {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cm-line.cm-fountain-action {
+  color: #d6d6d6;
+}
+
+.cm-line.cm-fountain-character {
+  padding-left: 14ch;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cm-line.cm-fountain-parenthetical {
+  padding-left: 11ch;
+  font-style: italic;
+  color: #b9b9b9;
+}
+
+.cm-line.cm-fountain-dialogue {
+  padding-left: 8ch;
+  padding-right: 8ch;
+}
+
+.cm-line.cm-fountain-transition {
+  text-align: right;
+  padding-right: 2ch;
+  text-transform: uppercase;
+  color: #c2c2c2;
+}
+
+.cm-line.cm-fountain-section {
+  color: #8ab4f8;
+  font-weight: 600;
+}
+
+.cm-line.cm-fountain-synopsis {
+  color: #9aa0a6;
+  font-style: italic;
+}

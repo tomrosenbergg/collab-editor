@@ -1,3 +1,147 @@
+================================================================================
+DATABASE SCHEMA (Supabase Dump)
+================================================================================
+
+{
+  "tables": [
+    {
+      "name": "documents",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": "YES"
+        },
+        {
+          "name": "content",
+          "type": "bytea",
+          "nullable": "YES"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES"
+        },
+        {
+          "name": "is_public",
+          "type": "boolean",
+          "nullable": "YES"
+        },
+        {
+          "name": "public_permission",
+          "type": "text",
+          "nullable": "YES"
+        }
+      ],
+      "rls_enabled": true,
+      "policies": [
+        {
+          "name": "Allow Create",
+          "command": "INSERT",
+          "roles": [
+            "public"
+          ],
+          "using": null,
+          "check": "(auth.uid() = owner_id)"
+        },
+        {
+          "name": "Allow Delete",
+          "command": "DELETE",
+          "roles": [
+            "public"
+          ],
+          "using": "(auth.uid() = owner_id)",
+          "check": null
+        },
+        {
+          "name": "Allow Read Access",
+          "command": "SELECT",
+          "roles": [
+            "public"
+          ],
+          "using": "((auth.uid() = owner_id) OR (is_public = true) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text))))))",
+          "check": null
+        },
+        {
+          "name": "Allow Update",
+          "command": "UPDATE",
+          "roles": [
+            "public"
+          ],
+          "using": "((auth.uid() = owner_id) OR ((is_public = true) AND (public_permission = 'editor'::text)) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text)) AND (document_permissions.permission_level = 'editor'::text)))))",
+          "check": null
+        }
+      ]
+    },
+    {
+      "name": "document_permissions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": "NO"
+        },
+        {
+          "name": "document_id",
+          "type": "uuid",
+          "nullable": "NO"
+        },
+        {
+          "name": "user_email",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "permission_level",
+          "type": "text",
+          "nullable": "NO"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": "YES"
+        }
+      ],
+      "rls_enabled": true,
+      "policies": [
+        {
+          "name": "Owners manage permissions",
+          "command": "ALL",
+          "roles": [
+            "public"
+          ],
+          "using": "is_document_owner(document_id)",
+          "check": null
+        },
+        {
+          "name": "Users see own permissions",
+          "command": "SELECT",
+          "roles": [
+            "public"
+          ],
+          "using": "(user_email = (auth.jwt() ->> 'email'::text))",
+          "check": null
+        }
+      ]
+    }
+  ]
+}
+
 
 ================================================================================
 FILE: tsconfig.node.json
@@ -132,12 +276,6 @@ FILE: package.json
   }
 }
 
-
-================================================================================
-FILE: schema.json
-================================================================================
-
-{"tables" : [{"name" : "documents", "columns" : [{"name" : "id", "type" : "uuid", "nullable" : "NO"}, {"name" : "owner_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "title", "type" : "text", "nullable" : "YES"}, {"name" : "content", "type" : "bytea", "nullable" : "YES"}, {"name" : "updated_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Users can select own docs", "command" : "SELECT", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Users can insert own docs", "command" : "INSERT", "roles" : ["public"], "using" : null, "check" : "(auth.uid() = owner_id)"}, {"name" : "Users can update own docs", "command" : "UPDATE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Users can delete own docs", "command" : "DELETE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}]}]}{"tables" : [{"name" : "documents", "columns" : [{"name" : "id", "type" : "uuid", "nullable" : "NO"}, {"name" : "owner_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "title", "type" : "text", "nullable" : "YES"}, {"name" : "content", "type" : "bytea", "nullable" : "YES"}, {"name" : "updated_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "is_public", "type" : "boolean", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Allow Create", "command" : "INSERT", "roles" : ["public"], "using" : null, "check" : "(auth.uid() = owner_id)"}, {"name" : "Allow Delete", "command" : "DELETE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Allow Read Access", "command" : "SELECT", "roles" : ["public"], "using" : "((auth.uid() = owner_id) OR (is_public = true) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text))))))", "check" : null}, {"name" : "Allow Update", "command" : "UPDATE", "roles" : ["public"], "using" : "((auth.uid() = owner_id) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text)) AND (document_permissions.permission_level = 'editor'::text)))))", "check" : null}]}, {"name" : "document_permissions", "columns" : [{"name" : "id", "type" : "bigint", "nullable" : "NO"}, {"name" : "document_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "user_email", "type" : "text", "nullable" : "NO"}, {"name" : "permission_level", "type" : "text", "nullable" : "NO"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Owners manage permissions", "command" : "ALL", "roles" : ["public"], "using" : "(EXISTS ( SELECT 1\n   FROM documents\n  WHERE ((documents.id = document_permissions.document_id) AND (documents.owner_id = auth.uid()))))", "check" : null}, {"name" : "Users see own permissions", "command" : "SELECT", "roles" : ["public"], "using" : "(user_email = (auth.jwt() ->> 'email'::text))", "check" : null}]}]}
 
 ================================================================================
 FILE: tsconfig.json
@@ -305,39 +443,77 @@ function App() {
   const [showShare, setShowShare] = useState(false)
   const [shareDocId, setShareDocId] = useState<string | null>(null)
   const [isCurrentDocOwner, setIsCurrentDocOwner] = useState(false)
+  
+  // New State: If true, we force the Login screen even if a docId exists
+  const [authRequired, setAuthRequired] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session) setShowDashboard(true) 
+      
+      const params = new URLSearchParams(window.location.search)
+      const urlDocId = params.get('id')
+      
+      if (urlDocId) {
+        setCurrentDocId(urlDocId)
+      } else if (session) {
+        setShowDashboard(true)
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (!session) {
-        setCurrentDocId(null)
-        setShowDashboard(false)
+        // Only clear doc if we aren't trying to view a public link
+        // We leave currentDocId alone so they can log back in and see it
+        setAuthRequired(false) // Reset this on logout
       } else {
-        if (!currentDocId) setShowDashboard(true)
+        // If we just logged in, remove the "Auth Required" block
+        setAuthRequired(false)
       }
     })
     return () => subscription.unsubscribe()
-  }, [currentDocId])
+  }, [])
 
-  // Handlers
+  const openDocument = (id: string) => {
+    setCurrentDocId(id)
+    setShowDashboard(false)
+    const newUrl = `${window.location.pathname}?id=${id}`
+    window.history.pushState({ path: newUrl }, '', newUrl)
+  }
+
   const handleOpenShare = (docId: string) => {
     setShareDocId(docId)
     setShowShare(true)
   }
 
-  if (!session) {
-    return <Auth supabase={supabase} />
+  // LOGIC: Show Auth if:
+  // 1. We are explicitly told to (authRequired)
+  // 2. OR we have no session AND no document to try and load
+  const showAuthScreen = authRequired || (!session && !currentDocId)
+
+  if (showAuthScreen) {
+    return (
+      <>
+        {/* Optional: Add a little banner explaining why they are here */}
+        {authRequired && (
+          <div style={{
+            position: 'absolute', top: 0, width: '100%', 
+            background: '#ee6352', color: 'white', textAlign: 'center', padding: '10px',
+            fontSize: '0.9rem'
+          }}>
+            This document is private. Please log in to view.
+          </div>
+        )}
+        <Auth supabase={supabase} />
+      </>
+    )
   }
 
   return (
     <div className="App">
-      {/* Menu (only visible if a doc is open) */}
-      {currentDocId && (
+      {/* Menu */}
+      {session && currentDocId && (
         <Menu 
           onOpenDashboard={() => setShowDashboard(true)} 
           onShare={() => handleOpenShare(currentDocId)}
@@ -345,31 +521,34 @@ function App() {
         />
       )}
 
-      {/* Main Editor Area */}
+      {/* Editor */}
       {currentDocId ? (
         <CollaborativeEditor 
           key={currentDocId} 
           documentId={currentDocId} 
           supabase={supabase} 
-          currentUserEmail={session.user.email}
+          currentUserEmail={session?.user?.email}
           onSetIsOwner={setIsCurrentDocOwner}
+          onAuthRequired={() => setAuthRequired(true)} // <--- TRIGGER LOGIN
         />
       ) : (
         <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
-          No document open
+           <button 
+             onClick={() => setShowDashboard(true)}
+             className="dashboard-create-btn"
+          >
+            Open Dashboard
+          </button>
         </div>
       )}
 
       {/* Dashboard Modal */}
-      {showDashboard && (
+      {session && showDashboard && (
         <Dashboard 
           supabase={supabase}
           userId={session.user.id}
-          onOpenDocument={(id) => {
-            setCurrentDocId(id)
-            setShowDashboard(false)
-          }}
-          onShare={handleOpenShare} // Opening share from dashboard list
+          onOpenDocument={openDocument}
+          onShare={handleOpenShare}
           onClose={() => {
             if (currentDocId) setShowDashboard(false)
           }}
@@ -377,7 +556,7 @@ function App() {
       )}
 
       {/* Share Modal */}
-      {showShare && shareDocId && (
+      {session && showShare && shareDocId && (
         <ShareModal
           supabase={supabase}
           documentId={shareDocId}
@@ -534,7 +713,7 @@ FILE: src/Dashboard.tsx
 
 import { useEffect, useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { Screenplay } from './types' // <--- CHANGED
+import type { Screenplay } from './types' // <--- ADD 'type' HERE
 
 interface Props {
   supabase: SupabaseClient
@@ -941,6 +1120,294 @@ body {
   font-style: italic;
 }
 
+/* =========================================
+   GOOGLE DOCS STYLE MODAL (Dark Theme)
+   ========================================= */
+
+.google-modal {
+  background: #1e1e1e; /* Dark grey background */
+  width: 500px;
+  max-width: 95vw;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  font-family: 'Roboto', sans-serif; /* Google uses Roboto, sans-serif is fine */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.google-modal-header {
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.google-modal-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #e0e0e0;
+}
+
+.header-actions .icon-btn {
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 5px;
+  margin-left: 10px;
+  border-radius: 50%;
+}
+
+.header-actions .icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.google-modal-content {
+  padding: 0 20px 20px 20px;
+}
+
+/* --- Section 1: Add People --- */
+.add-people-section {
+  background: #2d2d2d;
+  border-radius: 4px; /* Google's box look */
+  padding: 5px 10px;
+  margin-bottom: 20px;
+  border: 1px solid #555;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.add-people-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.google-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: white;
+  padding: 10px 0;
+  font-size: 1rem;
+  outline: none;
+}
+
+.role-select-simple {
+  background: transparent;
+  color: #aaa;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.google-primary-btn {
+  background: #8ab4f8; /* Google Blue Light */
+  color: #202124;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.google-primary-btn:disabled {
+  background: #5f6368;
+  color: #333;
+  cursor: default;
+}
+
+.toast-msg {
+  color: #8ab4f8;
+  font-size: 0.8rem;
+  margin-top: 5px;
+}
+
+/* --- Section 2: People List --- */
+.people-list-section {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.section-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #e0e0e0;
+  margin-bottom: 10px;
+}
+
+.person-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  gap: 12px;
+}
+
+.avatar-circle {
+  width: 32px;
+  height: 32px;
+  background: #a142f4; /* Random color style */
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.person-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.person-name {
+  color: #e0e0e0;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person-email {
+  color: #9aa0a6;
+  font-size: 0.8rem;
+}
+
+.owner-label {
+  color: #9aa0a6;
+  font-size: 0.9rem;
+  padding-right: 10px;
+}
+
+.role-dropdown-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.role-select-ghost {
+  background: transparent;
+  color: #e0e0e0;
+  border: none;
+  text-align: right;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.role-select-ghost:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.remove-btn {
+  background: none;
+  border: none;
+  color: #9aa0a6;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0 5px;
+}
+
+.remove-btn:hover {
+  color: #ff6b6b;
+}
+
+/* --- Section 3: General Access --- */
+.general-access-section {
+  margin-bottom: 20px;
+}
+
+.access-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+}
+
+.access-icon-circle {
+  width: 32px;
+  height: 32px;
+  background: #3c4043;
+  color: #bdc1c6;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.access-info {
+  flex: 1;
+}
+
+.access-select {
+  background: transparent;
+  color: #e0e0e0;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.access-desc {
+  color: #9aa0a6;
+  font-size: 0.8rem;
+}
+
+.public-role {
+  color: #9aa0a6;
+  font-size: 0.9rem;
+  margin-right: 10px;
+}
+
+/* --- Footer --- */
+.google-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 15px;
+  border-top: 1px solid #3c4043;
+}
+
+.copy-link-btn {
+  background: transparent;
+  border: 1px solid #5f6368;
+  color: #8ab4f8;
+  padding: 8px 16px;
+  border-radius: 18px; /* Pill shape */
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.copy-link-btn:hover {
+  background: rgba(138, 180, 248, 0.08);
+  border-color: #8ab4f8;
+}
+
+.google-done-btn {
+  background: #8ab4f8;
+  color: #202124;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 18px; /* Pill shape */
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.google-done-btn:hover {
+  opacity: 0.9;
+}
+
 ================================================================================
 FILE: src/index.css
 ================================================================================
@@ -986,6 +1453,17 @@ export interface Permission {
   user_email: string
   permission_level: 'viewer' | 'editor'
 }
+
+export interface Screenplay {
+  id: string
+  title: string
+  updated_at: string
+  owner_id: string
+  is_public: boolean
+  public_permission: 'viewer' | 'editor' // <--- NEW FIELD
+  content?: string
+}
+
 
 ================================================================================
 FILE: src/Menu.tsx
@@ -1041,7 +1519,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
 
-// ... (Theme code remains same) ...
+// --- Theme Configuration ---
 const darkScreenplayTheme = EditorView.theme({
   "&": { height: "100vh", backgroundColor: "transparent", color: "#e0e0e0" },
   ".cm-scroller": { overflow: "auto", fontFamily: "'Courier Prime', 'Courier', monospace" },
@@ -1060,27 +1538,53 @@ interface Props {
   supabase: SupabaseClient
   currentUserEmail: string | undefined
   onSetIsOwner: (isOwner: boolean) => void
+  onAuthRequired: () => void
 }
 
-export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, onSetIsOwner }: Props) => {
+export const CollaborativeEditor = ({ 
+  documentId, 
+  supabase, 
+  currentUserEmail, 
+  onSetIsOwner, 
+  onAuthRequired 
+}: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
   const [doc] = useState(() => new Y.Doc())
   const { status, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
   
-  // New State for Permissions
   const [permissionLoaded, setPermissionLoaded] = useState(false)
   const [isReadOnly, setIsReadOnly] = useState(false)
+  const [accessDenied, setAccessDenied] = useState(false)
 
-  // 1. Check Permissions First
+  // 1. Check Permissions
   useEffect(() => {
     const checkAccess = async () => {
-      if (!currentUserEmail) return;
-
-      // A. Check Ownership
-      const { data: docData } = await supabase.from('documents').select('owner_id').eq('id', documentId).single();
-      const userId = (await supabase.auth.getUser()).data.user?.id;
+      setPermissionLoaded(false)
       
-      if (docData?.owner_id === userId) {
+      // A. Fetch Document Metadata
+      // We explicitly select 'public_permission' to see if anonymous users can edit
+      const { data: docData } = await supabase
+        .from('documents')
+        .select('owner_id, is_public, public_permission')
+        .eq('id', documentId)
+        .maybeSingle()
+
+      // B. Handle Missing Data (RLS Hidden or Deleted)
+      if (!docData) {
+        if (!currentUserEmail) {
+          // If anonymous and we can't see it, it might be private. Bounce to login.
+          onAuthRequired() 
+        } else {
+          // If logged in and can't see it, it's truly restricted or deleted.
+          setAccessDenied(true)
+          setPermissionLoaded(true)
+        }
+        return
+      }
+
+      // C. Check Ownership (Always Read-Write)
+      const userId = (await supabase.auth.getUser()).data.user?.id
+      if (docData.owner_id === userId) {
         setIsReadOnly(false)
         onSetIsOwner(true)
         setPermissionLoaded(true)
@@ -1088,7 +1592,26 @@ export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, on
       }
       onSetIsOwner(false)
 
-      // B. Check Explicit Permissions
+      // D. Check Public Editor Status
+      // If the doc is public AND allows public editing, grant access immediately.
+      // This applies to both Anonymous and Logged-in users.
+      if (docData.is_public && docData.public_permission === 'editor') {
+        setIsReadOnly(false)
+        setPermissionLoaded(true)
+        return
+      }
+
+      // E. Check Anonymous Viewer
+      if (!currentUserEmail) {
+        // If we reached here: It's public (visible), but NOT a public editor.
+        // Therefore, it must be Read-Only.
+        setIsReadOnly(true)
+        setPermissionLoaded(true)
+        return
+      }
+
+      // F. Check Explicit Permissions (For Logged In Users)
+      // Even if public is "Viewer", a specific user might be invited as "Editor".
       const { data: perm } = await supabase
         .from('document_permissions')
         .select('permission_level')
@@ -1098,12 +1621,12 @@ export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, on
 
       if (perm) {
         setIsReadOnly(perm.permission_level === 'viewer')
-        setPermissionLoaded(true)
-        return
+      } else {
+        // Not explicitly invited.
+        // Fallback to Public Status (Viewer) because RLS allowed us to see the docData.
+        setIsReadOnly(true) 
       }
-
-      // C. Public Fallback (Assumed Viewer if we got this far via RLS)
-      setIsReadOnly(true) 
+      
       setPermissionLoaded(true)
     }
     
@@ -1111,16 +1634,17 @@ export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, on
   }, [documentId, currentUserEmail])
 
 
+  // 2. Initialize Editor
   useEffect(() => {
-    if (!permissionLoaded) return; // Wait for permission check
+    if (!permissionLoaded || accessDenied) return; 
 
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // Set User Info
+    // Set User Awareness Color/Name
     provider.awareness.setLocalStateField('user', {
       name: currentUserEmail?.split('@')[0] || 'Anonymous',
-      color: '#30bced', // You can randomize this again
+      color: '#30bced', // You could randomize this per user
     })
 
     const state = EditorState.create({
@@ -1128,20 +1652,21 @@ export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, on
       extensions: [
         basicSetup,
         darkScreenplayTheme,
-        // ENFORCE READ ONLY
+        // DYNAMIC READ ONLY MODE
         EditorState.readOnly.of(isReadOnly),
         yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         
+        // Center the page vertically
         EditorView.scrollMargins.of((view) => {
           const dom = view.dom;
           const halfHeight = dom.clientHeight / 2;
           return { top: halfHeight - 10, bottom: halfHeight - 10 };
         }),
 
+        // Save on changes (if allowed)
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !isReadOnly) {
-            // OPTIONAL: Check size limit here (update.state.doc.length)
             saveDocument(documentId)
           }
         })
@@ -1150,19 +1675,40 @@ export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, on
 
     const view = new EditorView({ state, parent: editorRef.current! })
 
+    // Load initial content
     loadDocument(documentId)
 
     return () => {
       view.destroy()
       provider.destroy()
     }
-  }, [documentId, supabase, doc, permissionLoaded, isReadOnly])
+  }, [documentId, supabase, doc, permissionLoaded, isReadOnly, accessDenied])
 
-  if (!permissionLoaded) return <div style={{color:'#666', padding: 20}}>Verifying access...</div>
+  // --- Render States ---
+
+  if (accessDenied) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20 }}>
+        <h2 style={{color: '#e0e0e0'}}>Access Denied</h2>
+        <p style={{color: '#888'}}>You do not have permission to view this screenplay.</p>
+        <a href="/" style={{color: '#30bced'}}>Back to Home</a>
+      </div>
+    )
+  }
+
+  if (!permissionLoaded) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+        Loading screenplay...
+      </div>
+    )
+  }
 
   return (
     <>
       <div ref={editorRef} style={{ width: '100%', height: '100vh', outline: 'none' }} />
+      
+      {/* Status Indicator */}
       <div style={{
         position: 'fixed', bottom: 20, right: 20,
         color: '#666', fontFamily: 'sans-serif', fontSize: '12px', pointerEvents: 'none'
@@ -1186,7 +1732,7 @@ FILE: src/ShareModal.tsx
 
 import { useState, useEffect } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { Permission } from './types'
+import type { Permission } from './types'
 
 interface Props {
   supabase: SupabaseClient
@@ -1197,11 +1743,15 @@ interface Props {
 
 export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: Props) => {
   const [isPublic, setIsPublic] = useState(false)
+  const [publicRole, setPublicRole] = useState<'viewer' | 'editor'>('viewer') // <--- NEW STATE
   const [permissions, setPermissions] = useState<Permission[]>([])
   const [newEmail, setNewEmail] = useState('')
-  const [newRole, setNewRole] = useState<'viewer' | 'editor'>('viewer')
+  const [newRole, setNewRole] = useState<'viewer' | 'editor'>('editor')
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
+  const [copyBtnText, setCopyBtnText] = useState('Copy link')
+
+  const shareUrl = `${window.location.origin}${window.location.pathname}?id=${documentId}`
 
   useEffect(() => {
     fetchSettings()
@@ -1209,17 +1759,17 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
 
   const fetchSettings = async () => {
     setLoading(true)
-    
-    // 1. Get Public Status
     const { data: doc } = await supabase
       .from('documents')
-      .select('is_public')
+      .select('is_public, public_permission') // <--- Fetch new column
       .eq('id', documentId)
       .single()
     
-    if (doc) setIsPublic(doc.is_public)
+    if (doc) {
+      setIsPublic(doc.is_public)
+      setPublicRole(doc.public_permission as 'viewer' | 'editor')
+    }
 
-    // 2. Get Collaborators
     const { data: perms } = await supabase
       .from('document_permissions')
       .select('*')
@@ -1229,19 +1779,32 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     setLoading(false)
   }
 
-  const togglePublic = async () => {
-    const newValue = !isPublic
-    setIsPublic(newValue)
-    await supabase.from('documents').update({ is_public: newValue }).eq('id', documentId)
+  // Handle toggling Restricted vs Public
+  const handleAccessChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newVal = e.target.value
+    if (newVal === 'restricted') {
+      setIsPublic(false)
+      await supabase.from('documents').update({ is_public: false }).eq('id', documentId)
+    } else {
+      setIsPublic(true)
+      await supabase.from('documents').update({ is_public: true }).eq('id', documentId)
+    }
+  }
+
+  // Handle changing Public Role (Viewer vs Editor)
+  const handlePublicRoleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newRole = e.target.value as 'viewer' | 'editor'
+    setPublicRole(newRole)
+    await supabase.from('documents').update({ public_permission: newRole }).eq('id', documentId)
   }
 
   const inviteUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newEmail.trim()) return
 
-    // Prevent adding self
     if (newEmail === currentUserEmail) {
       setMsg("You are the owner.")
+      setTimeout(() => setMsg(''), 2000)
       return
     }
 
@@ -1254,10 +1817,19 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     if (error) {
       setMsg(error.message.includes('unique') ? 'User already added.' : error.message)
     } else {
-      setMsg('')
+      setMsg(`Added ${newEmail}`)
       setNewEmail('')
       fetchSettings()
     }
+    setTimeout(() => setMsg(''), 3000)
+  }
+
+  const updatePermission = async (email: string, newLevel: 'viewer' | 'editor') => {
+    await supabase.from('document_permissions')
+      .update({ permission_level: newLevel })
+      .eq('document_id', documentId)
+      .eq('user_email', email)
+    fetchSettings()
   }
 
   const removeUser = async (email: string) => {
@@ -1268,78 +1840,133 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     fetchSettings()
   }
 
+  const copyLink = () => {
+    navigator.clipboard.writeText(shareUrl)
+    setCopyBtnText('Link copied')
+    setTimeout(() => setCopyBtnText('Copy link'), 2000)
+  }
+
+  const getInitials = (email: string) => email.substring(0, 2).toUpperCase()
+
   return (
     <div className="dashboard-overlay">
-      <div className="dashboard-modal" style={{ width: '400px' }}>
-        <div className="dashboard-header">
-          <h2>Share Document</h2>
-          <button onClick={onClose} className="dashboard-close">Close</button>
+      <div className="google-modal">
+        <div className="google-modal-header">
+          <h2>Share "Untitled Screenplay"</h2>
+          <div className="header-actions">
+            <button className="icon-btn" onClick={onClose}>✕</button>
+          </div>
         </div>
 
-        {loading ? <p>Loading settings...</p> : (
-          <>
-            {/* Public Link Toggle */}
-            <div style={{ marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '1px solid #333' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+        {loading ? <div style={{padding: 20}}>Loading...</div> : (
+          <div className="google-modal-content">
+            
+            {/* 1. Add People */}
+            <div className="add-people-section">
+              <form onSubmit={inviteUser} className="add-people-form">
                 <input 
-                  type="checkbox" 
-                  checked={isPublic} 
-                  onChange={togglePublic} 
-                  style={{ width: '20px', height: '20px' }}
+                  type="email" 
+                  placeholder="Add people and groups" 
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  className="google-input"
                 />
-                <span>
-                  <strong>Public Link</strong>
-                  <div style={{ fontSize: '0.8rem', color: '#666' }}>
-                    Anyone with the link can view
-                  </div>
-                </span>
-              </label>
+                <select 
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as any)}
+                  className="role-select-simple"
+                >
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button type="submit" className="google-primary-btn" disabled={!newEmail}>Send</button>
+              </form>
+              {msg && <div className="toast-msg">{msg}</div>}
             </div>
 
-            {/* Invite Form */}
-            <form onSubmit={inviteUser} style={{ display: 'flex', gap: '8px', marginBottom: '2rem' }}>
-              <input 
-                className="dashboard-input"
-                type="email" 
-                placeholder="user@example.com" 
-                value={newEmail}
-                onChange={e => setNewEmail(e.target.value)}
-                required
-              />
-              <select 
-                className="dashboard-input" 
-                style={{ flex: '0 0 80px' }}
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as any)}
-              >
-                <option value="viewer">View</option>
-                <option value="editor">Edit</option>
-              </select>
-              <button type="submit" className="dashboard-create-btn">Add</button>
-            </form>
-            {msg && <p className="auth-error" style={{ fontSize: '0.9rem', marginTop: '-1rem' }}>{msg}</p>}
-
-            {/* Collaborator List */}
-            <div className="dashboard-list">
-              <h3 style={{ fontSize: '1rem', margin: '0 0 10px 0', color: '#888' }}>Collaborators</h3>
-              {permissions.length === 0 && <p style={{ color: '#555', fontStyle: 'italic' }}>No specific people invited.</p>}
+            {/* 2. List */}
+            <div className="people-list-section">
+              <div className="section-label">People with access</div>
               
+              <div className="person-row">
+                <div className="avatar-circle">{getInitials(currentUserEmail || 'Me')}</div>
+                <div className="person-info">
+                  <div className="person-name">{currentUserEmail} (you)</div>
+                  <div className="person-email">Owner</div>
+                </div>
+                <div className="person-role owner-label">Owner</div>
+              </div>
+
               {permissions.map(p => (
-                <div key={p.id} className="dashboard-item" style={{ cursor: 'default' }}>
-                  <div className="item-meta">
-                    <div className="item-title" style={{ fontSize: '0.95rem' }}>{p.user_email}</div>
-                    <div className="item-date">{p.permission_level}</div>
+                <div key={p.id} className="person-row">
+                  <div className="avatar-circle">{getInitials(p.user_email)}</div>
+                  <div className="person-info">
+                    <div className="person-name">{p.user_email}</div>
                   </div>
-                  <button 
-                    className="item-delete-btn" 
-                    onClick={() => removeUser(p.user_email)}
-                  >
-                    ×
-                  </button>
+                  <div className="role-dropdown-container">
+                    <select 
+                      value={p.permission_level}
+                      onChange={(e) => updatePermission(p.user_email, e.target.value as any)}
+                      className="role-select-ghost"
+                    >
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                    </select>
+                    <button className="remove-btn" onClick={() => removeUser(p.user_email)}>×</button>
+                  </div>
                 </div>
               ))}
             </div>
-          </>
+
+            {/* 3. General Access (UPDATED) */}
+            <div className="general-access-section">
+              <div className="section-label">General access</div>
+              <div className="access-row">
+                <div className="access-icon-circle">
+                  {isPublic ? '🌐' : '🔒'}
+                </div>
+                <div className="access-info">
+                  {/* Dropdown 1: Restricted vs Public */}
+                  <select 
+                    value={isPublic ? 'public' : 'restricted'}
+                    onChange={handleAccessChange}
+                    className="access-select"
+                  >
+                    <option value="restricted">Restricted</option>
+                    <option value="public">Anyone with the link</option>
+                  </select>
+                  <div className="access-desc">
+                    {isPublic 
+                      ? "Anyone on the internet with the link can view" 
+                      : "Only people with access can open with the link"}
+                  </div>
+                </div>
+                
+                {/* Dropdown 2: Public Role (Visible only if Public) */}
+                {isPublic && (
+                  <div className="role-dropdown-container">
+                    <select 
+                      value={publicRole}
+                      onChange={handlePublicRoleChange}
+                      className="role-select-ghost"
+                      style={{ fontWeight: 500, color: '#e0e0e0' }}
+                    >
+                      <option value="viewer">Viewer</option>
+                      <option value="editor">Editor</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="google-modal-footer">
+              <button className="copy-link-btn" onClick={copyLink}>
+                <span style={{marginRight: 8}}>🔗</span> 
+                {copyBtnText}
+              </button>
+              <button className="google-done-btn" onClick={onClose}>Done</button>
+            </div>
+          </div>
         )}
       </div>
     </div>
