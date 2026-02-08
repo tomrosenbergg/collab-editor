@@ -16,6 +16,8 @@ const lineClassByType = new Map<string, string>([
   ['Parenthetical', 'cm-fountain-parenthetical'],
   ['DialogueLine', 'cm-fountain-dialogue'],
   ['TransitionLine', 'cm-fountain-transition'],
+  ['ForceTransition', 'cm-fountain-right'],
+  ['CenterLine', 'cm-fountain-center'],
   ['SectionLine', 'cm-fountain-section'],
   ['SynopsisLine', 'cm-fountain-synopsis'],
 ])

@@ -69,74 +69,81 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
 
   return (
     <div className="dashboard-overlay">
-      <div className="dashboard-modal">
-        <div className="dashboard-header">
-          <h2>My Screenplays</h2>
-          <button onClick={onClose} className="dashboard-close">Close</button>
+      <div className="dashboard-modal dashboard-docs">
+        <div className="dashboard-header docs-header">
+          <div>
+            <h2>My Screenplays</h2>
+            <p className="docs-subtitle">Recent files and shared projects</p>
+          </div>
+          <div className="docs-actions">
+            <button onClick={createDoc} className="docs-primary-btn">New</button>
+            <button onClick={onClose} className="docs-close">Close</button>
+          </div>
         </div>
 
-        <div className="dashboard-create-row">
-          <input 
-            className="dashboard-input"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="New Screenplay Title..."
-            onKeyDown={(e) => e.key === 'Enter' && createDoc()}
-          />
-          <button onClick={createDoc} className="dashboard-create-btn">Create</button>
+        <div className="docs-toolbar">
+          <div className="docs-search">
+            <input 
+              className="docs-search-input"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="New screenplay title..."
+              onKeyDown={(e) => e.key === 'Enter' && createDoc()}
+            />
+            <button onClick={createDoc} className="docs-create-btn">Create</button>
+          </div>
         </div>
 
-        {loading ? <p style={{ color: '#666' }}>Loading...</p> : (
-          <div className="dashboard-list">
+        {loading ? <p className="docs-loading">Loading...</p> : (
+          <div className="docs-list">
             {docs.map(doc => (
               <div 
                 key={doc.id} 
-                className="dashboard-item"
+                className="docs-row"
                 onClick={() => onOpenDocument(doc.id)}
               >
-                <div className="item-meta" style={{ flex: 1 }}>
-                  {editingId === doc.id ? (
-                    <input 
-                      autoFocus
-                      className="dashboard-input"
-                      value={editTitle}
-                      onChange={e => setEditTitle(e.target.value)}
-                      onBlur={() => saveTitle(doc.id)}
-                      onKeyDown={e => e.key === 'Enter' && saveTitle(doc.id)}
-                      onClick={e => e.stopPropagation()}
-                    />
-                  ) : (
-                    <div 
-                      className="item-title" 
-                      title={doc.owner_id === userId ? "Double click to rename" : "Shared with you"}
-                      onDoubleClick={(e) => startRenaming(e, doc)}
-                    >
-                      {doc.title} 
-                      {doc.owner_id !== userId && <span style={{fontSize:'0.7rem', opacity:0.6, marginLeft: 8}}> (Shared)</span>}
+                <div className="docs-file">
+                  <div className="docs-file-icon">📄</div>
+                  <div className="docs-file-meta">
+                    {editingId === doc.id ? (
+                      <input 
+                        autoFocus
+                        className="docs-rename-input"
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        onBlur={() => saveTitle(doc.id)}
+                        onKeyDown={e => e.key === 'Enter' && saveTitle(doc.id)}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div 
+                        className="docs-file-title" 
+                        title={doc.owner_id === userId ? "Double click to rename" : "Shared with you"}
+                        onDoubleClick={(e) => startRenaming(e, doc)}
+                      >
+                        {doc.title} 
+                        {doc.owner_id !== userId && <span className="docs-shared">(Shared)</span>}
+                      </div>
+                    )}
+                    <div className="docs-file-date">
+                      {new Date(doc.updated_at).toLocaleDateString()}
                     </div>
-                  )}
-                  <div className="item-date">
-                    {new Date(doc.updated_at).toLocaleDateString()}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {/* Share Button (Only for Owners) */}
+                <div className="docs-row-actions">
                   {doc.owner_id === userId && (
                     <button 
-                      className="item-delete-btn"
-                      style={{ color: '#30bced', fontSize: '1rem' }}
+                      className="docs-link-btn"
                       onClick={(e) => { e.stopPropagation(); onShare(doc.id); }}
                       title="Share"
                     >
                       Share
                     </button>
                   )}
-
-                  {/* Delete Button (Only for Owners) */}
                   {doc.owner_id === userId && (
                     <button 
-                      className="item-delete-btn"
+                      className="docs-icon-btn"
                       onClick={(e) => deleteDoc(doc.id, e)}
                       title="Delete"
                     >
