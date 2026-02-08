@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
 import debounce from 'lodash/debounce'
@@ -12,6 +12,8 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
   const isLoaded = useRef(false)
   const pendingUpdates = useRef<Uint8Array[]>([])
   const updatesSinceCompact = useRef(0)
+  const lastCompactAt = useRef<number>(Date.now())
+  const currentDocumentIdRef = useRef<string>('')
   
   // Parse Postgres HEX format (\x0123...)
   const parsePostgresHex = (hexContent: string): Uint8Array => {
@@ -26,6 +28,7 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
   const loadDocument = useCallback(async (documentId: string) => {
     setStatus('loading')
     isLoaded.current = false // Reset loaded state
+    currentDocumentIdRef.current = documentId
     try {
       const { data, error } = await supabase
         .from('documents')
@@ -76,6 +79,25 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
     }
   }, [supabase, doc])
 
+  const compactUpdates = useCallback(
+    async (documentId: string) => {
+      const snapshot = Y.encodeStateAsUpdate(doc)
+      const snapshotHex = Array.from(snapshot)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+
+      const { error: compactError } = await supabase.rpc('compact_document_updates', {
+        p_document_id: documentId,
+        p_content_hex: snapshotHex,
+      })
+      if (!compactError) {
+        updatesSinceCompact.current = 0
+        lastCompactAt.current = Date.now()
+      }
+    },
+    [supabase, doc]
+  )
+
   const flushUpdates = useMemo(
     () =>
       debounce(async (documentId: string) => {
@@ -100,18 +122,7 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
 
           updatesSinceCompact.current += 1
           if (updatesSinceCompact.current >= 50) {
-            const snapshot = Y.encodeStateAsUpdate(doc)
-            const snapshotHex = Array.from(snapshot)
-              .map((b) => b.toString(16).padStart(2, '0'))
-              .join('')
-
-            const { error: compactError } = await supabase.rpc('compact_document_updates', {
-              p_document_id: documentId,
-              p_content_hex: snapshotHex,
-            })
-            if (!compactError) {
-              updatesSinceCompact.current = 0
-            }
+            await compactUpdates(documentId)
           }
 
           setStatus('saved')
@@ -120,16 +131,31 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
           setStatus('error')
         }
       }, 500),
-    [supabase, doc]
+    [supabase, doc, compactUpdates]
   )
 
   const saveUpdate = useCallback(
     (documentId: string, update: Uint8Array) => {
+      currentDocumentIdRef.current = documentId
       pendingUpdates.current.push(update)
       flushUpdates(documentId)
     },
     [flushUpdates]
   )
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!isLoaded.current) return
+      if (!currentDocumentIdRef.current) return
+      if (updatesSinceCompact.current === 0) return
+      const ageMs = Date.now() - lastCompactAt.current
+      if (ageMs < 2 * 60 * 1000) return
+      // Fire-and-forget compaction to keep the update log bounded.
+      compactUpdates(currentDocumentIdRef.current)
+    }, 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [compactUpdates])
 
   return { status, loadDocument, saveUpdate, cancelSave: flushUpdates.cancel }
 }
