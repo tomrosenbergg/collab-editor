@@ -5,6 +5,7 @@
 :root {
   background-color: #1a1a1a;
   color: #e0e0e0;
+  font-family: 'Inter', Arial, sans-serif;
 }
 
 body {
@@ -14,6 +15,7 @@ body {
   overflow: hidden;
   width: 100vw;
   height: 100vh;
+  font-family: 'Inter', Arial, sans-serif;
 }
 
 #root {
@@ -33,6 +35,75 @@ body {
 }
 
 /* =========================================
+   UI PRIMITIVES
+   ========================================= */
+.ui-card {
+  background: #1e1e1e;
+  border: 1px solid #2c2f36;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+}
+
+.ui-btn {
+  background: #1f232b;
+  color: #e6e6e6;
+  border: 1px solid #2b313a;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.ui-btn:hover {
+  background: #262b34;
+}
+
+.ui-btn-primary {
+  background: #8ab4f8;
+  color: #202124;
+  border: none;
+}
+
+.ui-btn-primary:hover {
+  background: #7aa8f0;
+}
+
+.ui-btn-ghost {
+  background: transparent;
+  border: 1px solid #3c4043;
+  color: #e0e0e0;
+}
+
+.ui-btn-text {
+  background: transparent;
+  border: none;
+  color: #8ab4f8;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ui-btn-text:hover {
+  background: rgba(138, 180, 248, 0.08);
+}
+
+.ui-input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #3c4043;
+  background: #111418;
+  color: #e0e0e0;
+  font-family: inherit;
+}
+
+.ui-input:focus {
+  outline: none;
+  border-color: #8ab4f8;
+}
+
+/* =========================================
    AUTH SCREEN
    ========================================= */
 .auth-shell {
@@ -41,7 +112,7 @@ body {
               radial-gradient(900px 500px at 90% 10%, rgba(138, 180, 248, 0.12), transparent),
               #0f1012;
   color: #e6e6e6;
-  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-family: 'Inter', Arial, sans-serif;
   display: flex;
   flex-direction: column;
 }
@@ -90,7 +161,7 @@ body {
 }
 
 .auth-title {
-  font-family: 'Instrument Serif', 'Times New Roman', serif;
+  font-family: 'Inter', Arial, sans-serif;
   font-size: 3.1rem;
   line-height: 1.1;
   margin: 0 0 16px;
@@ -307,14 +378,10 @@ body {
 }
 
 .dashboard-modal {
-  background: #1a1a1a;
-  border: 1px solid #444;
   padding: 2rem;
   width: 500px;
   max-height: 80vh;
   overflow-y: auto;
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
 .dashboard-header {
@@ -432,13 +499,9 @@ body {
    DOCS-STYLE DASHBOARD
    ========================================= */
 .dashboard-docs {
-  background: #1e1e1e;
-  border: 1px solid #2c2f36;
   padding: 1.5rem;
   width: min(900px, 92vw);
   max-height: 82vh;
-  border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
 }
 
 .docs-header h2 {
@@ -617,15 +680,62 @@ body {
    ========================================= */
 
 .google-modal {
-  background: #1e1e1e; /* Dark grey background */
   width: 500px;
   max-width: 95vw;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-  font-family: 'Roboto', sans-serif; /* Google uses Roboto, sans-serif is fine */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* =========================================
+   MENU
+   ========================================= */
+.menu-shell {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 50;
+}
+
+.menu-trigger {
+  background: #1f232b;
+  color: #e6e6e6;
+  border: 1px solid #2b313a;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.menu-panel {
+  margin-top: 8px;
+  background: #1b1f26;
+  border: 1px solid #2b313a;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.menu-item {
+  background: transparent;
+  color: #e6e6e6;
+  border: none;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.menu-item:hover {
+  background: #262b34;
+}
+
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .google-modal-header {

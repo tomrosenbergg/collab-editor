@@ -138,7 +138,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
 
   return (
     <div className="dashboard-overlay">
-      <div className="google-modal">
+      <div className="google-modal ui-card">
         <div className="google-modal-header">
           <h2>Share "Untitled Screenplay"</h2>
           <div className="header-actions">
@@ -157,7 +157,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
                   placeholder="Add people and groups" 
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
-                  className="google-input"
+                  className="google-input ui-input"
                 />
                 <select 
                   value={newRole}
@@ -167,7 +167,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
                   <option value="editor">Editor</option>
                   <option value="viewer">Viewer</option>
                 </select>
-                <button type="submit" className="google-primary-btn" disabled={!newEmail}>Send</button>
+                <button type="submit" className="google-primary-btn ui-btn ui-btn-primary" disabled={!newEmail}>Send</button>
               </form>
               {msg && <div className="toast-msg">{msg}</div>}
             </div>
@@ -248,11 +248,11 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
             </div>
 
             <div className="google-modal-footer">
-              <button className="copy-link-btn" onClick={copyLink}>
+              <button className="copy-link-btn ui-btn ui-btn-ghost" onClick={copyLink}>
                 <span style={{marginRight: 8}}>🔗</span> 
                 {copyBtnText}
               </button>
-              <button className="google-done-btn" onClick={onClose}>Done</button>
+              <button className="google-done-btn ui-btn ui-btn-primary" onClick={onClose}>Done</button>
             </div>
           </div>
         )}

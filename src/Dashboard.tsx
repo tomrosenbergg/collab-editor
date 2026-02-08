@@ -80,28 +80,28 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
 
   return (
     <div className="dashboard-overlay">
-      <div className="dashboard-modal dashboard-docs">
+      <div className="dashboard-modal dashboard-docs ui-card">
         <div className="dashboard-header docs-header">
           <div>
             <h2>My Screenplays</h2>
             <p className="docs-subtitle">Recent files and shared projects</p>
           </div>
           <div className="docs-actions">
-            <button onClick={createDoc} className="docs-primary-btn">New</button>
-            <button onClick={onClose} className="docs-close">Close</button>
+            <button onClick={createDoc} className="docs-primary-btn ui-btn ui-btn-primary">New</button>
+            <button onClick={onClose} className="docs-close ui-btn ui-btn-ghost">Close</button>
           </div>
         </div>
 
         <div className="docs-toolbar">
           <div className="docs-search">
             <input 
-              className="docs-search-input"
+              className="docs-search-input ui-input"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder="New screenplay title..."
               onKeyDown={(e) => e.key === 'Enter' && createDoc()}
             />
-            <button onClick={createDoc} className="docs-create-btn">Create</button>
+            <button onClick={createDoc} className="docs-create-btn ui-btn">Create</button>
           </div>
         </div>
 
@@ -119,7 +119,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
                     {editingId === doc.id ? (
                       <input 
                         autoFocus
-                        className="docs-rename-input"
+                        className="docs-rename-input ui-input"
                         value={editTitle}
                         onChange={e => setEditTitle(e.target.value)}
                         onBlur={() => saveTitle(doc.id)}
@@ -145,7 +145,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
                 <div className="docs-row-actions">
                   {doc.owner_id === userId && (
                     <button 
-                      className="docs-link-btn"
+                      className="docs-link-btn ui-btn-text"
                       onClick={(e) => { e.stopPropagation(); onShare(doc.id); }}
                       title="Share"
                     >

@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react'
+
 interface MenuProps {
   onOpenDashboard: () => void
   onShare: () => void
@@ -5,31 +7,39 @@ interface MenuProps {
 }
 
 export const Menu = ({ onOpenDashboard, onShare, isOwner }: MenuProps) => {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (!menuRef.current) return
+      if (!menuRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   return (
-    <div style={{ 
-      position: 'fixed', top: 20, left: 20, zIndex: 50,
-      display: 'flex', gap: '10px'
-    }}>
-      <button 
-        onClick={onOpenDashboard}
-        style={{ 
-          background: '#333', color: 'white', border: 'none', 
-          padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
-        }}
-      >
-        ≡ Files
+    <div className="menu-shell" ref={menuRef}>
+      <button className="menu-trigger" onClick={() => setOpen((v) => !v)}>
+        Menu
       </button>
-      
-      {isOwner && (
-        <button 
-          onClick={onShare}
-          style={{ 
-            background: '#333', color: '#30bced', border: 'none', 
-            padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
-          }}
-        >
-          Share
-        </button>
+      {open && (
+        <div className="menu-panel">
+          <button className="menu-item" onClick={() => { setOpen(false); onOpenDashboard() }}>
+            File manager
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => { setOpen(false); onShare() }}
+            disabled={!isOwner}
+            title={!isOwner ? 'Only owners can share' : 'Share'}
+          >
+            Share
+          </button>
+        </div>
       )}
     </div>
   )
