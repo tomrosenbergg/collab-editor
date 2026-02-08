@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
-import { fetchDocumentMeta, fetchPermissionForUser } from './data/documents'
+import { useDocumentAccess } from './hooks/useDocumentAccess'
 import { useEditorSetup } from './editor/useEditorSetup'
+import type { Database } from './types/supabase'
 
 interface Props {
   documentId: string
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
   currentUserEmail: string | undefined
   onSetIsOwner: (isOwner: boolean) => void
   onAuthRequired: () => void
@@ -22,94 +23,33 @@ export const CollaborativeEditor = ({
 }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
   const [doc] = useState(() => new Y.Doc())
-  const { status, loadDocument, saveDocument, cancelSave } = useYjsPersistence(supabase, doc)
+  const { status, loadDocument, saveUpdate, cancelSave } = useYjsPersistence(supabase, doc)
   
-  const [permissionLoaded, setPermissionLoaded] = useState(false)
-  const [isReadOnly, setIsReadOnly] = useState(false)
-  const [accessDenied, setAccessDenied] = useState(false)
+  const { permissionLoaded, isReadOnly, accessDenied, isOwner, requiresAuth } = useDocumentAccess(
+    supabase,
+    documentId,
+    currentUserEmail
+  )
 
-  // 1. Check Permissions
   useEffect(() => {
-    const checkAccess = async () => {
-      setPermissionLoaded(false)
-      
-      // A. Fetch Document Metadata
-      // We explicitly select 'public_permission' to see if anonymous users can edit
-      let docData: Awaited<ReturnType<typeof fetchDocumentMeta>> = null
-      try {
-        docData = await fetchDocumentMeta(supabase, documentId)
-      } catch {
-        docData = null
-      }
-
-      // B. Handle Missing Data (RLS Hidden or Deleted)
-      if (!docData) {
-        if (!currentUserEmail) {
-          // If anonymous and we can't see it, it might be private. Bounce to login.
-          onAuthRequired() 
-        } else {
-          // If logged in and can't see it, it's truly restricted or deleted.
-          setAccessDenied(true)
-          setPermissionLoaded(true)
-        }
-        return
-      }
-
-      // C. Check Ownership (Always Read-Write)
-      const userId = (await supabase.auth.getUser()).data.user?.id
-      if (docData.owner_id === userId) {
-        setIsReadOnly(false)
-        onSetIsOwner(true)
-        setPermissionLoaded(true)
-        return
-      }
-      onSetIsOwner(false)
-
-      // D. Check Public Editor Status
-      // If the doc is public AND allows public editing, grant access immediately.
-      // This applies to both Anonymous and Logged-in users.
-      if (docData.is_public && docData.public_permission === 'editor') {
-        setIsReadOnly(false)
-        setPermissionLoaded(true)
-        return
-      }
-
-      // E. Check Anonymous Viewer
-      if (!currentUserEmail) {
-        // If we reached here: It's public (visible), but NOT a public editor.
-        // Therefore, it must be Read-Only.
-        setIsReadOnly(true)
-        setPermissionLoaded(true)
-        return
-      }
-
-      // F. Check Explicit Permissions (For Logged In Users)
-      // Even if public is "Viewer", a specific user might be invited as "Editor".
-      const perm = await fetchPermissionForUser(supabase, documentId, currentUserEmail)
-
-      if (perm?.permission_level) {
-        setIsReadOnly(perm.permission_level === 'viewer')
-      } else {
-        // Not explicitly invited.
-        // Fallback to Public Status (Viewer) because RLS allowed us to see the docData.
-        setIsReadOnly(true) 
-      }
-      
-      setPermissionLoaded(true)
+    if (requiresAuth) {
+      onAuthRequired()
     }
-    
-    checkAccess()
-  }, [documentId, currentUserEmail])
+  }, [requiresAuth, onAuthRequired])
+
+  useEffect(() => {
+    onSetIsOwner(isOwner)
+  }, [isOwner, onSetIsOwner])
 
 
   // 2. Persist local changes only
   useEffect(() => {
     if (!permissionLoaded || accessDenied) return
 
-    const handleUpdate = (_update: Uint8Array, origin: unknown) => {
+    const handleUpdate = (update: Uint8Array, origin: unknown) => {
       if (isReadOnly) return
       if (origin === 'remote' || origin === 'db-load') return
-      saveDocument(documentId)
+      saveUpdate(documentId, update)
     }
 
     doc.on('update', handleUpdate)
@@ -117,7 +57,7 @@ export const CollaborativeEditor = ({
       doc.off('update', handleUpdate)
       cancelSave()
     }
-  }, [doc, documentId, isReadOnly, permissionLoaded, accessDenied, saveDocument, cancelSave])
+  }, [doc, documentId, isReadOnly, permissionLoaded, accessDenied, saveUpdate, cancelSave])
 
   useEditorSetup({
     editorRef,
@@ -127,7 +67,7 @@ export const CollaborativeEditor = ({
     currentUserEmail,
     isReadOnly,
     permissionLoaded,
-    accessDenied,
+    accessDenied: accessDenied || requiresAuth,
     loadDocument,
   })
 
@@ -143,7 +83,7 @@ export const CollaborativeEditor = ({
     )
   }
 
-  if (!permissionLoaded) {
+  if (!permissionLoaded || requiresAuth) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
         Loading screenplay...

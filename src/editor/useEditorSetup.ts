@@ -5,11 +5,12 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { SupabaseProvider } from '../SupabaseProvider'
 import { getEditorExtensions } from './getEditorExtensions'
+import type { Database } from '../types/supabase'
 
 interface UseEditorSetupArgs {
   editorRef: React.RefObject<HTMLDivElement>
   doc: Y.Doc
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
   documentId: string
   currentUserEmail?: string
   isReadOnly: boolean

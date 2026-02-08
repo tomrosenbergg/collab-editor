@@ -23,5 +23,12 @@ Used by the client to save Yjs content for editors without granting broad UPDATE
   - `content` (hex decoded to `bytea`)
   - `updated_at`
 
+### `append_document_update(p_document_id uuid, p_update_hex text)`
+Stores incremental Yjs updates for collaboration.
+
+### `compact_document_updates(p_document_id uuid, p_content_hex text)`
+Writes a snapshot to `documents.content`, updates `snapshot_at`, and clears the update log.
+
 ### SQL to apply
 Use `/Users/tom/Documents/collab-editor/supabase/rls_policies.sql` in the Supabase SQL editor.
+Use `/Users/tom/Documents/collab-editor/supabase/yjs_updates.sql` in the Supabase SQL editor.

@@ -10,9 +10,10 @@ import {
   updatePermission as updatePermissionLevel,
 } from './data/documents'
 import { useToast } from './ui/Toast'
+import type { Database } from './types/supabase'
 
 interface Props {
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
   documentId: string
   currentUserEmail: string | undefined
   onClose: () => void

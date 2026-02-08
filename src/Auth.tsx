@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { signInWithEmail, signInWithGoogle, signUpWithEmail } from './data/auth'
+import type { Database } from './types/supabase'
 
 interface Props {
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
 }
 
 export const Auth = ({ supabase }: Props) => {

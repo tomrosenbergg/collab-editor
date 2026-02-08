@@ -3,9 +3,10 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import type { Screenplay } from './types'
 import { createDocument, deleteDocument, fetchDocuments, updateDocumentTitle } from './data/documents'
 import { useToast } from './ui/Toast'
+import type { Database } from './types/supabase'
 
 interface Props {
-  supabase: SupabaseClient
+  supabase: SupabaseClient<Database>
   userId: string
   onOpenDocument: (id: string) => void
   onShare: (docId: string) => void

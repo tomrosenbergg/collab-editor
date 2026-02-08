@@ -7,10 +7,12 @@ import { Menu } from './Menu'
 import { ShareModal } from './ShareModal'
 import { ErrorBoundary } from './ui/ErrorBoundary'
 import './App.css'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from './config'
+import type { Database } from './types/supabase'
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
+const supabase = createClient<Database>(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   { realtime: { params: { eventsPerSecond: 10 } } }
 )
 

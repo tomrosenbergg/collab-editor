@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness'
+import type { Database } from './types/supabase'
 
 /**
  * 1. Performance Helpers: Base64 Encoding/Decoding
@@ -29,7 +30,7 @@ export class SupabaseProvider {
   private _isConnected: boolean = false
   private _resyncInterval: ReturnType<typeof setInterval> | null = null
 
-  constructor(doc: Y.Doc, supabase: SupabaseClient, channelId: string) {
+  constructor(doc: Y.Doc, supabase: SupabaseClient<Database>, channelId: string) {
     this.doc = doc
     this.awareness = new Awareness(doc)
     this.channel = supabase.channel(channelId)

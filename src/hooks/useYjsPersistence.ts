@@ -2,12 +2,16 @@ import { useState, useCallback, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
 import debounce from 'lodash/debounce'
+import type { Database } from '../types/supabase'
+import { logger } from '../utils/logger'
 
 type SaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
 
-export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
+export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc) => {
   const [status, setStatus] = useState<SaveStatus>('idle')
   const isLoaded = useRef(false)
+  const pendingUpdates = useRef<Uint8Array[]>([])
+  const updatesSinceCompact = useRef(0)
   
   // Parse Postgres HEX format (\x0123...)
   const parsePostgresHex = (hexContent: string): Uint8Array => {
@@ -25,7 +29,7 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
     try {
       const { data, error } = await supabase
         .from('documents')
-        .select('content')
+        .select('content, snapshot_at')
         .eq('id', documentId)
         .maybeSingle()
 
@@ -40,50 +44,92 @@ export const useYjsPersistence = (supabase: SupabaseClient, doc: Y.Doc) => {
           Y.applyUpdate(doc, update, 'db-load')
         }
       }
+
+      const snapshotAt = data?.snapshot_at ?? null
+      let updatesQuery = supabase
+        .from('document_updates')
+        .select('update, created_at')
+        .eq('document_id', documentId)
+        .order('created_at', { ascending: true })
+
+      if (snapshotAt) {
+        updatesQuery = updatesQuery.gt('created_at', snapshotAt)
+      }
+
+      const { data: updates, error: updatesError } = await updatesQuery
+      if (updatesError) throw updatesError
+
+      if (updates) {
+        for (const row of updates) {
+          const updateStr = typeof row.update === 'string' ? row.update : ''
+          const updateBytes = parsePostgresHex(updateStr)
+          if (updateBytes.length > 0) {
+            Y.applyUpdate(doc, updateBytes, 'db-load')
+          }
+        }
+      }
       isLoaded.current = true
       setStatus('saved')
     } catch (e) {
-      console.error('Failed to load document:', e)
+      logger.error('Failed to load document', { error: e })
       setStatus('error')
     }
   }, [supabase, doc])
 
-  const debouncedSave = useMemo(
+  const flushUpdates = useMemo(
     () =>
       debounce(async (documentId: string) => {
         if (!isLoaded.current) return
+        if (pendingUpdates.current.length === 0) return
 
         setStatus('saving')
         try {
-          const state = Y.encodeStateAsUpdate(doc)
+          const merged = Y.mergeUpdates(pendingUpdates.current)
+          pendingUpdates.current = []
 
-          // Convert to HEX for Postgres bytea
-          const hex = Array.from(state)
+          const hex = Array.from(merged)
             .map((b) => b.toString(16).padStart(2, '0'))
             .join('')
 
-          const { error } = await supabase.rpc('update_document_content', {
+          const { error } = await supabase.rpc('append_document_update', {
             p_document_id: documentId,
-            p_content_hex: hex,
+            p_update_hex: hex,
           })
 
           if (error) throw error
 
+          updatesSinceCompact.current += 1
+          if (updatesSinceCompact.current >= 50) {
+            const snapshot = Y.encodeStateAsUpdate(doc)
+            const snapshotHex = Array.from(snapshot)
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('')
+
+            const { error: compactError } = await supabase.rpc('compact_document_updates', {
+              p_document_id: documentId,
+              p_content_hex: snapshotHex,
+            })
+            if (!compactError) {
+              updatesSinceCompact.current = 0
+            }
+          }
+
           setStatus('saved')
         } catch (e) {
-          console.error('Failed to save document:', e)
+          logger.error('Failed to append document update', { error: e })
           setStatus('error')
         }
-      }, 2000),
+      }, 500),
     [supabase, doc]
   )
 
-  const saveDocument = useCallback(
-    (documentId: string) => {
-      debouncedSave(documentId)
+  const saveUpdate = useCallback(
+    (documentId: string, update: Uint8Array) => {
+      pendingUpdates.current.push(update)
+      flushUpdates(documentId)
     },
-    [debouncedSave]
+    [flushUpdates]
   )
 
-  return { status, loadDocument, saveDocument, cancelSave: debouncedSave.cancel }
+  return { status, loadDocument, saveUpdate, cancelSave: flushUpdates.cancel }
 }
