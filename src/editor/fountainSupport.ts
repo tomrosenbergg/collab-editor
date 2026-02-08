@@ -1,7 +1,7 @@
 import { LRLanguage, syntaxTree } from '@codemirror/language'
 import { RangeSetBuilder } from '@codemirror/state'
 import { Decoration, ViewPlugin, type EditorView, type ViewUpdate } from '@codemirror/view'
-import { parser } from './fountain-parser.js'
+import { parser } from '../parser/fountain-parser.js'
 
 export const fountainLanguage = LRLanguage.define({
   parser,

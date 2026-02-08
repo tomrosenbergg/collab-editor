@@ -1,26 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
-import { EditorView, basicSetup } from 'codemirror'
-import { EditorState } from '@codemirror/state'
-import { yCollab } from 'y-codemirror.next'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
-import { fountainLanguage, fountainLineFormatting } from './parser/fountainSupport'
-
-// --- Theme Configuration ---
-const darkScreenplayTheme = EditorView.theme({
-  "&": { height: "100vh", backgroundColor: "transparent", color: "#e0e0e0" },
-  ".cm-scroller": { overflow: "auto", fontFamily: "'Courier Prime', 'Courier', monospace" },
-  ".cm-content": { 
-    caretColor: "white", margin: "0 auto", maxWidth: "60ch", 
-    paddingLeft: "2.5ch", paddingRight: "2.5ch", paddingTop: "50vh", paddingBottom: "50vh" 
-  },
-  ".cm-cursor": { borderLeftColor: "white", borderLeftWidth: "2px" },
-  ".cm-gutters": { display: "none" },
-  ".cm-activeLine": { backgroundColor: "transparent" },
-  ".cm-activeLineGutter": { backgroundColor: "transparent" }
-})
+import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
+import { getEditorExtensions } from './editor/getEditorExtensions'
+import { fetchDocumentMeta, fetchPermissionForUser } from './data/documents'
 
 interface Props {
   documentId: string
@@ -52,11 +38,12 @@ export const CollaborativeEditor = ({
       
       // A. Fetch Document Metadata
       // We explicitly select 'public_permission' to see if anonymous users can edit
-      const { data: docData } = await supabase
-        .from('documents')
-        .select('owner_id, is_public, public_permission')
-        .eq('id', documentId)
-        .maybeSingle()
+      let docData: Awaited<ReturnType<typeof fetchDocumentMeta>> = null
+      try {
+        docData = await fetchDocumentMeta(supabase, documentId)
+      } catch {
+        docData = null
+      }
 
       // B. Handle Missing Data (RLS Hidden or Deleted)
       if (!docData) {
@@ -101,14 +88,9 @@ export const CollaborativeEditor = ({
 
       // F. Check Explicit Permissions (For Logged In Users)
       // Even if public is "Viewer", a specific user might be invited as "Editor".
-      const { data: perm } = await supabase
-        .from('document_permissions')
-        .select('permission_level')
-        .eq('document_id', documentId)
-        .eq('user_email', currentUserEmail)
-        .single()
+      const perm = await fetchPermissionForUser(supabase, documentId, currentUserEmail)
 
-      if (perm) {
+      if (perm?.permission_level) {
         setIsReadOnly(perm.permission_level === 'viewer')
       } else {
         // Not explicitly invited.
@@ -155,23 +137,11 @@ export const CollaborativeEditor = ({
 
     const state = EditorState.create({
       doc: ytext.toString(),
-      extensions: [
-        basicSetup,
-        darkScreenplayTheme,
-        fountainLanguage,
-        fountainLineFormatting,
-        // DYNAMIC READ ONLY MODE
-        EditorState.readOnly.of(isReadOnly),
-        yCollab(ytext, provider.awareness),
-        EditorView.lineWrapping,
-        
-        // Center the page vertically
-        EditorView.scrollMargins.of((view) => {
-          const dom = view.dom;
-          const halfHeight = dom.clientHeight / 2;
-          return { top: halfHeight - 10, bottom: halfHeight - 10 };
-        })
-      ],
+      extensions: getEditorExtensions({
+        isReadOnly,
+        ytext,
+        awareness: provider.awareness,
+      }),
     })
 
     const view = new EditorView({ state, parent: editorRef.current! })

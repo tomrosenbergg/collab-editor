@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Permission } from './types'
+import {
+  fetchPermissions,
+  inviteUser,
+  removeUser as removePermissionUser,
+  setPublicAccess,
+  setPublicRole,
+  updatePermission as updatePermissionLevel,
+} from './data/documents'
 
 interface Props {
   supabase: SupabaseClient
@@ -29,7 +37,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     setLoading(true)
     const { data: doc } = await supabase
       .from('documents')
-      .select('is_public, public_permission') // <--- Fetch new column
+      .select('is_public, public_permission')
       .eq('id', documentId)
       .single()
     
@@ -38,12 +46,12 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
       setPublicRole(doc.public_permission as 'viewer' | 'editor')
     }
 
-    const { data: perms } = await supabase
-      .from('document_permissions')
-      .select('*')
-      .eq('document_id', documentId)
-
-    if (perms) setPermissions(perms)
+    try {
+      const perms = await fetchPermissions(supabase, documentId)
+      setPermissions(perms)
+    } catch {
+      setPermissions([])
+    }
     setLoading(false)
   }
 
@@ -52,10 +60,10 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     const newVal = e.target.value
     if (newVal === 'restricted') {
       setIsPublic(false)
-      await supabase.from('documents').update({ is_public: false }).eq('id', documentId)
+      await setPublicAccess(supabase, documentId, false)
     } else {
       setIsPublic(true)
-      await supabase.from('documents').update({ is_public: true }).eq('id', documentId)
+      await setPublicAccess(supabase, documentId, true)
     }
   }
 
@@ -63,7 +71,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
   const handlePublicRoleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newRole = e.target.value as 'viewer' | 'editor'
     setPublicRole(newRole)
-    await supabase.from('documents').update({ public_permission: newRole }).eq('id', documentId)
+    await setPublicRole(supabase, documentId, newRole)
   }
 
   const inviteUser = async (e: React.FormEvent) => {
@@ -76,35 +84,24 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
       return
     }
 
-    const { error } = await supabase.from('document_permissions').insert({
-      document_id: documentId,
-      user_email: newEmail.trim(),
-      permission_level: newRole
-    })
-
-    if (error) {
-      setMsg(error.message.includes('unique') ? 'User already added.' : error.message)
-    } else {
+    try {
+      await inviteUser(supabase, documentId, newEmail.trim(), newRole)
       setMsg(`Added ${newEmail}`)
       setNewEmail('')
       fetchSettings()
+    } catch (error: any) {
+      setMsg(error.message.includes('unique') ? 'User already added.' : error.message)
     }
     setTimeout(() => setMsg(''), 3000)
   }
 
   const updatePermission = async (email: string, newLevel: 'viewer' | 'editor') => {
-    await supabase.from('document_permissions')
-      .update({ permission_level: newLevel })
-      .eq('document_id', documentId)
-      .eq('user_email', email)
+    await updatePermissionLevel(supabase, documentId, email, newLevel)
     fetchSettings()
   }
 
   const removeUser = async (email: string) => {
-    await supabase.from('document_permissions')
-      .delete()
-      .eq('document_id', documentId)
-      .eq('user_email', email)
+    await removePermissionUser(supabase, documentId, email)
     fetchSettings()
   }
 

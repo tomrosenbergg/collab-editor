@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
-import type { Screenplay } from './types' // <--- ADD 'type' HERE
+import type { Screenplay } from './types'
+import { createDocument, deleteDocument, fetchDocuments, updateDocumentTitle } from './data/documents'
 
 interface Props {
   supabase: SupabaseClient
@@ -23,12 +24,12 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
   }, [])
 
   const fetchDocs = async () => {
-    const { data } = await supabase
-      .from('documents')
-      .select('id, title, updated_at, owner_id, is_public')
-      .order('updated_at', { ascending: false })
-    
-    if (data) setDocs(data as Screenplay[]) // <--- CHANGED
+    try {
+      const data = await fetchDocuments(supabase)
+      setDocs(data)
+    } catch {
+      setDocs([])
+    }
     setLoading(false)
   }
 
@@ -37,20 +38,23 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
 
   const createDoc = async () => {
     if (!newTitle.trim()) return
-    const { data } = await supabase
-      .from('documents')
-      .insert({ title: newTitle, owner_id: userId, content: '', is_public: false })
-      .select()
-      .single()
-    
-    if (data) onOpenDocument(data.id)
+    try {
+      const data = await createDocument(supabase, newTitle, userId)
+      onOpenDocument(data.id)
+    } catch {
+      return
+    }
   }
 
   const deleteDoc = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!confirm('Are you sure?')) return
-    await supabase.from('documents').delete().eq('id', id)
-    fetchDocs()
+    try {
+      await deleteDocument(supabase, id)
+      fetchDocs()
+    } catch {
+      return
+    }
   }
 
   const startRenaming = (e: React.MouseEvent, doc: Screenplay) => { // <--- CHANGED
@@ -62,9 +66,13 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
 
   const saveTitle = async (id: string) => {
     if (!editTitle.trim()) return
-    await supabase.from('documents').update({ title: editTitle }).eq('id', id)
-    setEditingId(null)
-    fetchDocs()
+    try {
+      await updateDocumentTitle(supabase, id, editTitle)
+      setEditingId(null)
+      fetchDocs()
+    } catch {
+      return
+    }
   }
 
   return (

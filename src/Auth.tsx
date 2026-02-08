@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { signInWithEmail, signInWithGoogle, signUpWithEmail } from './data/auth'
 
 interface Props {
   supabase: SupabaseClient
@@ -16,12 +17,7 @@ export const Auth = ({ supabase }: Props) => {
     setLoading(true)
     setMsg('')
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      })
+      const { error } = await signInWithGoogle(supabase, window.location.origin)
       if (error) throw error
     } catch (error: any) {
       setMsg(error.message)
@@ -36,10 +32,10 @@ export const Auth = ({ supabase }: Props) => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        const { error } = await signInWithEmail(supabase, email, password)
         if (error) throw error
       } else {
-        const { error } = await supabase.auth.signUp({ email, password })
+        const { error } = await signUpWithEmail(supabase, email, password)
         if (error) throw error
         setMsg('Check your email for the login link!')
       }
