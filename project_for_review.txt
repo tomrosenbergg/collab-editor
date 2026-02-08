@@ -134,6 +134,12 @@ FILE: package.json
 
 
 ================================================================================
+FILE: schema.json
+================================================================================
+
+{"tables" : [{"name" : "documents", "columns" : [{"name" : "id", "type" : "uuid", "nullable" : "NO"}, {"name" : "owner_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "title", "type" : "text", "nullable" : "YES"}, {"name" : "content", "type" : "bytea", "nullable" : "YES"}, {"name" : "updated_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Users can select own docs", "command" : "SELECT", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Users can insert own docs", "command" : "INSERT", "roles" : ["public"], "using" : null, "check" : "(auth.uid() = owner_id)"}, {"name" : "Users can update own docs", "command" : "UPDATE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Users can delete own docs", "command" : "DELETE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}]}]}{"tables" : [{"name" : "documents", "columns" : [{"name" : "id", "type" : "uuid", "nullable" : "NO"}, {"name" : "owner_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "title", "type" : "text", "nullable" : "YES"}, {"name" : "content", "type" : "bytea", "nullable" : "YES"}, {"name" : "updated_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}, {"name" : "is_public", "type" : "boolean", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Allow Create", "command" : "INSERT", "roles" : ["public"], "using" : null, "check" : "(auth.uid() = owner_id)"}, {"name" : "Allow Delete", "command" : "DELETE", "roles" : ["public"], "using" : "(auth.uid() = owner_id)", "check" : null}, {"name" : "Allow Read Access", "command" : "SELECT", "roles" : ["public"], "using" : "((auth.uid() = owner_id) OR (is_public = true) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text))))))", "check" : null}, {"name" : "Allow Update", "command" : "UPDATE", "roles" : ["public"], "using" : "((auth.uid() = owner_id) OR (EXISTS ( SELECT 1\n   FROM document_permissions\n  WHERE ((document_permissions.document_id = documents.id) AND (document_permissions.user_email = (auth.jwt() ->> 'email'::text)) AND (document_permissions.permission_level = 'editor'::text)))))", "check" : null}]}, {"name" : "document_permissions", "columns" : [{"name" : "id", "type" : "bigint", "nullable" : "NO"}, {"name" : "document_id", "type" : "uuid", "nullable" : "NO"}, {"name" : "user_email", "type" : "text", "nullable" : "NO"}, {"name" : "permission_level", "type" : "text", "nullable" : "NO"}, {"name" : "created_at", "type" : "timestamp with time zone", "nullable" : "YES"}], "rls_enabled" : true, "policies" : [{"name" : "Owners manage permissions", "command" : "ALL", "roles" : ["public"], "using" : "(EXISTS ( SELECT 1\n   FROM documents\n  WHERE ((documents.id = document_permissions.document_id) AND (documents.owner_id = auth.uid()))))", "check" : null}, {"name" : "Users see own permissions", "command" : "SELECT", "roles" : ["public"], "using" : "(user_email = (auth.jwt() ->> 'email'::text))", "check" : null}]}]}
+
+================================================================================
 FILE: tsconfig.json
 ================================================================================
 
@@ -280,7 +286,8 @@ import { createClient, type Session } from '@supabase/supabase-js'
 import { CollaborativeEditor } from './CollaborativeEditor'
 import { Auth } from './Auth'
 import { Dashboard } from './Dashboard'
-import { Menu } from './Menu' // <--- IMPORT ADDED
+import { Menu } from './Menu'
+import { ShareModal } from './ShareModal'
 import './App.css'
 
 const supabase = createClient(
@@ -292,7 +299,12 @@ const supabase = createClient(
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [currentDocId, setCurrentDocId] = useState<string | null>(null)
+  
+  // UI States
   const [showDashboard, setShowDashboard] = useState(false)
+  const [showShare, setShowShare] = useState(false)
+  const [shareDocId, setShareDocId] = useState<string | null>(null)
+  const [isCurrentDocOwner, setIsCurrentDocOwner] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -312,7 +324,11 @@ function App() {
     return () => subscription.unsubscribe()
   }, [currentDocId])
 
-  // REMOVED: Inline Menu component definition was here
+  // Handlers
+  const handleOpenShare = (docId: string) => {
+    setShareDocId(docId)
+    setShowShare(true)
+  }
 
   if (!session) {
     return <Auth supabase={supabase} />
@@ -320,20 +336,26 @@ function App() {
 
   return (
     <div className="App">
-      {/* Stable Menu Component */}
-      <Menu onOpenDashboard={() => setShowDashboard(true)} />
+      {/* Menu (only visible if a doc is open) */}
+      {currentDocId && (
+        <Menu 
+          onOpenDashboard={() => setShowDashboard(true)} 
+          onShare={() => handleOpenShare(currentDocId)}
+          isOwner={isCurrentDocOwner}
+        />
+      )}
 
-      {/* Editor - Key forces remount when doc changes */}
+      {/* Main Editor Area */}
       {currentDocId ? (
         <CollaborativeEditor 
           key={currentDocId} 
           documentId={currentDocId} 
           supabase={supabase} 
+          currentUserEmail={session.user.email}
+          onSetIsOwner={setIsCurrentDocOwner}
         />
       ) : (
-        <div style={{ 
-          height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' 
-        }}>
+        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
           No document open
         </div>
       )}
@@ -347,8 +369,22 @@ function App() {
             setCurrentDocId(id)
             setShowDashboard(false)
           }}
+          onShare={handleOpenShare} // Opening share from dashboard list
           onClose={() => {
             if (currentDocId) setShowDashboard(false)
+          }}
+        />
+      )}
+
+      {/* Share Modal */}
+      {showShare && shareDocId && (
+        <ShareModal
+          supabase={supabase}
+          documentId={shareDocId}
+          currentUserEmail={session.user.email}
+          onClose={() => {
+            setShowShare(false)
+            setShareDocId(null)
           }}
         />
       )}
@@ -498,24 +534,23 @@ FILE: src/Dashboard.tsx
 
 import { useEffect, useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
-
-interface Document {
-  id: string
-  title: string
-  updated_at: string
-}
+import { Screenplay } from './types' // <--- CHANGED
 
 interface Props {
   supabase: SupabaseClient
   userId: string
   onOpenDocument: (id: string) => void
+  onShare: (docId: string) => void
   onClose: () => void
 }
 
-export const Dashboard = ({ supabase, userId, onOpenDocument, onClose }: Props) => {
-  const [docs, setDocs] = useState<Document[]>([])
+export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }: Props) => {
+  // Use Screenplay[] here
+  const [docs, setDocs] = useState<Screenplay[]>([]) 
   const [loading, setLoading] = useState(true)
   const [newTitle, setNewTitle] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
 
   useEffect(() => {
     fetchDocs()
@@ -524,91 +559,128 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onClose }: Props) 
   const fetchDocs = async () => {
     const { data } = await supabase
       .from('documents')
-      .select('id, title, updated_at')
+      .select('id, title, updated_at, owner_id, is_public')
       .order('updated_at', { ascending: false })
-    if (data) setDocs(data)
+    
+    if (data) setDocs(data as Screenplay[]) // <--- CHANGED
     setLoading(false)
   }
 
+  // ... rest of the file remains exactly the same ...
+  // (Just make sure the logic below uses 'doc' or 'docs' variables normally)
+
   const createDoc = async () => {
     if (!newTitle.trim()) return
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('documents')
-      .insert({ title: newTitle, owner_id: userId, content: '' }) // Init empty
+      .insert({ title: newTitle, owner_id: userId, content: '', is_public: false })
       .select()
       .single()
     
-    if (data) {
-      onOpenDocument(data.id)
-    } else if (error) {
-      console.error(error)
-    }
+    if (data) onOpenDocument(data.id)
   }
 
   const deleteDoc = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Are you sure you want to delete this screenplay?')) return
+    if (!confirm('Are you sure?')) return
     await supabase.from('documents').delete().eq('id', id)
     fetchDocs()
   }
 
+  const startRenaming = (e: React.MouseEvent, doc: Screenplay) => { // <--- CHANGED
+    e.stopPropagation()
+    if (doc.owner_id !== userId) return
+    setEditingId(doc.id)
+    setEditTitle(doc.title)
+  }
+
+  const saveTitle = async (id: string) => {
+    if (!editTitle.trim()) return
+    await supabase.from('documents').update({ title: editTitle }).eq('id', id)
+    setEditingId(null)
+    fetchDocs()
+  }
+
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100,
-      display: 'flex', justifyContent: 'center', alignItems: 'center'
-    }}>
-      <div style={{
-        background: '#1a1a1a', border: '1px solid #444', padding: '2rem',
-        width: '500px', maxHeight: '80vh', overflowY: 'auto', borderRadius: '8px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
-          <h2 style={{ margin: 0 }}>My Screenplays</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}>Close</button>
+    <div className="dashboard-overlay">
+      <div className="dashboard-modal">
+        <div className="dashboard-header">
+          <h2>My Screenplays</h2>
+          <button onClick={onClose} className="dashboard-close">Close</button>
         </div>
 
-        {/* Create New */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '2rem' }}>
+        <div className="dashboard-create-row">
           <input 
+            className="dashboard-input"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="New Screenplay Title..."
-            style={{ flex: 1, padding: '8px', background: '#333', border: 'none', color: 'white' }}
+            onKeyDown={(e) => e.key === 'Enter' && createDoc()}
           />
-          <button onClick={createDoc} style={{ padding: '8px 16px', background: '#30bced', border: 'none', cursor: 'pointer' }}>
-            Create
-          </button>
+          <button onClick={createDoc} className="dashboard-create-btn">Create</button>
         </div>
 
-        {/* List */}
-        {loading ? <p>Loading...</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {loading ? <p style={{ color: '#666' }}>Loading...</p> : (
+          <div className="dashboard-list">
             {docs.map(doc => (
               <div 
                 key={doc.id} 
+                className="dashboard-item"
                 onClick={() => onOpenDocument(doc.id)}
-                style={{
-                  padding: '15px', background: '#222', border: '1px solid #333',
-                  cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#555'}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#333'}
               >
-                <div>
-                  <div style={{ fontWeight: 'bold' }}>{doc.title}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                <div className="item-meta" style={{ flex: 1 }}>
+                  {editingId === doc.id ? (
+                    <input 
+                      autoFocus
+                      className="dashboard-input"
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      onBlur={() => saveTitle(doc.id)}
+                      onKeyDown={e => e.key === 'Enter' && saveTitle(doc.id)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  ) : (
+                    <div 
+                      className="item-title" 
+                      title={doc.owner_id === userId ? "Double click to rename" : "Shared with you"}
+                      onDoubleClick={(e) => startRenaming(e, doc)}
+                    >
+                      {doc.title} 
+                      {doc.owner_id !== userId && <span style={{fontSize:'0.7rem', opacity:0.6, marginLeft: 8}}> (Shared)</span>}
+                    </div>
+                  )}
+                  <div className="item-date">
                     {new Date(doc.updated_at).toLocaleDateString()}
                   </div>
                 </div>
-                <button 
-                  onClick={(e) => deleteDoc(doc.id, e)}
-                  style={{ color: '#ee6352', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}
-                >
-                  ×
-                </button>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {/* Share Button (Only for Owners) */}
+                  {doc.owner_id === userId && (
+                    <button 
+                      className="item-delete-btn"
+                      style={{ color: '#30bced', fontSize: '1rem' }}
+                      onClick={(e) => { e.stopPropagation(); onShare(doc.id); }}
+                      title="Share"
+                    >
+                      Share
+                    </button>
+                  )}
+
+                  {/* Delete Button (Only for Owners) */}
+                  {doc.owner_id === userId && (
+                    <button 
+                      className="item-delete-btn"
+                      onClick={(e) => deleteDoc(doc.id, e)}
+                      title="Delete"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
-            {docs.length === 0 && <p style={{ color: '#666' }}>No scripts found.</p>}
+            {docs.length === 0 && <p className="dashboard-empty">No scripts found.</p>}
           </div>
         )}
       </div>
@@ -895,16 +967,37 @@ body {
 }
 
 ================================================================================
+FILE: src/types.ts
+================================================================================
+
+// Rename 'Document' to 'Screenplay' to avoid conflicts with global DOM Document
+export interface Screenplay {
+  id: string
+  title: string
+  updated_at: string
+  owner_id: string
+  is_public: boolean
+  content?: string
+}
+
+export interface Permission {
+  id: number
+  document_id: string
+  user_email: string
+  permission_level: 'viewer' | 'editor'
+}
+
+================================================================================
 FILE: src/Menu.tsx
 ================================================================================
 
-import React from 'react'
-
 interface MenuProps {
   onOpenDashboard: () => void
+  onShare: () => void
+  isOwner: boolean
 }
 
-export const Menu = ({ onOpenDashboard }: MenuProps) => {
+export const Menu = ({ onOpenDashboard, onShare, isOwner }: MenuProps) => {
   return (
     <div style={{ 
       position: 'fixed', top: 20, left: 20, zIndex: 50,
@@ -913,13 +1006,24 @@ export const Menu = ({ onOpenDashboard }: MenuProps) => {
       <button 
         onClick={onOpenDashboard}
         style={{ 
-          background: '#333', color: 'white', border: 'none', padding: '8px 12px', 
-          borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
+          background: '#333', color: 'white', border: 'none', 
+          padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
         }}
       >
         ≡ Files
       </button>
-      {/* You can add Rename/Export buttons here later */}
+      
+      {isOwner && (
+        <button 
+          onClick={onShare}
+          style={{ 
+            background: '#333', color: '#30bced', border: 'none', 
+            padding: '8px 12px', borderRadius: '4px', cursor: 'pointer', opacity: 0.7 
+          }}
+        >
+          Share
+        </button>
+      )}
     </div>
   )
 }
@@ -928,7 +1032,7 @@ export const Menu = ({ onOpenDashboard }: MenuProps) => {
 FILE: src/CollaborativeEditor.tsx
 ================================================================================
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState } from '@codemirror/state'
@@ -937,9 +1041,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseProvider } from './SupabaseProvider'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
 
-const USER_COLORS = ['#30bced', '#6eeb83', '#ffbc42', '#ecd444', '#ee6352']
-
-// ... (Theme code remains exactly the same as previous) ...
+// ... (Theme code remains same) ...
 const darkScreenplayTheme = EditorView.theme({
   "&": { height: "100vh", backgroundColor: "transparent", color: "#e0e0e0" },
   ".cm-scroller": { overflow: "auto", fontFamily: "'Courier Prime', 'Courier', monospace" },
@@ -956,89 +1058,291 @@ const darkScreenplayTheme = EditorView.theme({
 interface Props {
   documentId: string
   supabase: SupabaseClient
+  currentUserEmail: string | undefined
+  onSetIsOwner: (isOwner: boolean) => void
 }
 
-export const CollaborativeEditor = ({ documentId, supabase }: Props) => {
+export const CollaborativeEditor = ({ documentId, supabase, currentUserEmail, onSetIsOwner }: Props) => {
   const editorRef = useRef<HTMLDivElement>(null)
-  
-  // LIFECYCLE FIX:
-  // We use useState to lazily create the Y.Doc once.
-  // We DO NOT destroy it in useEffect cleanup to prevent strict mode crashes.
-  // JS Garbage Collection will handle it when the component is truly discarded.
   const [doc] = useState(() => new Y.Doc())
-
   const { status, loadDocument, saveDocument } = useYjsPersistence(supabase, doc)
+  
+  // New State for Permissions
+  const [permissionLoaded, setPermissionLoaded] = useState(false)
+  const [isReadOnly, setIsReadOnly] = useState(false)
+
+  // 1. Check Permissions First
+  useEffect(() => {
+    const checkAccess = async () => {
+      if (!currentUserEmail) return;
+
+      // A. Check Ownership
+      const { data: docData } = await supabase.from('documents').select('owner_id').eq('id', documentId).single();
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      
+      if (docData?.owner_id === userId) {
+        setIsReadOnly(false)
+        onSetIsOwner(true)
+        setPermissionLoaded(true)
+        return
+      }
+      onSetIsOwner(false)
+
+      // B. Check Explicit Permissions
+      const { data: perm } = await supabase
+        .from('document_permissions')
+        .select('permission_level')
+        .eq('document_id', documentId)
+        .eq('user_email', currentUserEmail)
+        .single()
+
+      if (perm) {
+        setIsReadOnly(perm.permission_level === 'viewer')
+        setPermissionLoaded(true)
+        return
+      }
+
+      // C. Public Fallback (Assumed Viewer if we got this far via RLS)
+      setIsReadOnly(true) 
+      setPermissionLoaded(true)
+    }
+    
+    checkAccess()
+  }, [documentId, currentUserEmail])
+
 
   useEffect(() => {
-    // 1. Initialize Provider
+    if (!permissionLoaded) return; // Wait for permission check
+
     const provider = new SupabaseProvider(doc, supabase, documentId)
     const ytext = doc.getText('codemirror')
 
-    // 2. Set Random User Info
+    // Set User Info
     provider.awareness.setLocalStateField('user', {
-      name: 'Writer ' + Math.floor(Math.random() * 100),
-      color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
+      name: currentUserEmail?.split('@')[0] || 'Anonymous',
+      color: '#30bced', // You can randomize this again
     })
 
-    // 3. Configure Editor
     const state = EditorState.create({
-      doc: ytext.toString(), // Initial text (sync logic will update this shortly)
+      doc: ytext.toString(),
       extensions: [
         basicSetup,
         darkScreenplayTheme,
-        yCollab(ytext, provider.awareness), // Bind Yjs to CodeMirror
+        // ENFORCE READ ONLY
+        EditorState.readOnly.of(isReadOnly),
+        yCollab(ytext, provider.awareness),
         EditorView.lineWrapping,
         
-        // Typewriter Scrolling
         EditorView.scrollMargins.of((view) => {
           const dom = view.dom;
           const halfHeight = dom.clientHeight / 2;
           return { top: halfHeight - 10, bottom: halfHeight - 10 };
         }),
 
-        // Save Trigger
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
+          if (update.docChanged && !isReadOnly) {
+            // OPTIONAL: Check size limit here (update.state.doc.length)
             saveDocument(documentId)
           }
         })
       ],
     })
 
-    const view = new EditorView({
-      state,
-      parent: editorRef.current!,
-    })
+    const view = new EditorView({ state, parent: editorRef.current! })
 
-    // 4. Load initial state from DB
     loadDocument(documentId)
 
-    // 5. Cleanup
     return () => {
       view.destroy()
       provider.destroy()
-      // NOTE: We specifically do NOT destroy 'doc' here.
     }
-  }, [documentId, supabase, doc, saveDocument, loadDocument])
+  }, [documentId, supabase, doc, permissionLoaded, isReadOnly])
+
+  if (!permissionLoaded) return <div style={{color:'#666', padding: 20}}>Verifying access...</div>
 
   return (
     <>
-      <div 
-        ref={editorRef} 
-        style={{ width: '100%', height: '100vh', outline: 'none' }} 
-      />
-      
-      {/* Status Indicator */}
+      <div ref={editorRef} style={{ width: '100%', height: '100vh', outline: 'none' }} />
       <div style={{
         position: 'fixed', bottom: 20, right: 20,
         color: '#666', fontFamily: 'sans-serif', fontSize: '12px', pointerEvents: 'none'
       }}>
-        {status === 'loading' && 'Loading...'}
-        {status === 'saving' && 'Saving...'}
-        {status === 'saved' && 'Saved'}
-        {status === 'error' && 'Sync Error'}
+        {isReadOnly ? "Read Only" : (
+           <>
+            {status === 'loading' && 'Loading...'}
+            {status === 'saving' && 'Saving...'}
+            {status === 'saved' && 'Saved'}
+            {status === 'error' && 'Sync Error'}
+           </>
+        )}
       </div>
     </>
+  )
+}
+
+================================================================================
+FILE: src/ShareModal.tsx
+================================================================================
+
+import { useState, useEffect } from 'react'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { Permission } from './types'
+
+interface Props {
+  supabase: SupabaseClient
+  documentId: string
+  currentUserEmail: string | undefined
+  onClose: () => void
+}
+
+export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: Props) => {
+  const [isPublic, setIsPublic] = useState(false)
+  const [permissions, setPermissions] = useState<Permission[]>([])
+  const [newEmail, setNewEmail] = useState('')
+  const [newRole, setNewRole] = useState<'viewer' | 'editor'>('viewer')
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    fetchSettings()
+  }, [documentId])
+
+  const fetchSettings = async () => {
+    setLoading(true)
+    
+    // 1. Get Public Status
+    const { data: doc } = await supabase
+      .from('documents')
+      .select('is_public')
+      .eq('id', documentId)
+      .single()
+    
+    if (doc) setIsPublic(doc.is_public)
+
+    // 2. Get Collaborators
+    const { data: perms } = await supabase
+      .from('document_permissions')
+      .select('*')
+      .eq('document_id', documentId)
+
+    if (perms) setPermissions(perms)
+    setLoading(false)
+  }
+
+  const togglePublic = async () => {
+    const newValue = !isPublic
+    setIsPublic(newValue)
+    await supabase.from('documents').update({ is_public: newValue }).eq('id', documentId)
+  }
+
+  const inviteUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newEmail.trim()) return
+
+    // Prevent adding self
+    if (newEmail === currentUserEmail) {
+      setMsg("You are the owner.")
+      return
+    }
+
+    const { error } = await supabase.from('document_permissions').insert({
+      document_id: documentId,
+      user_email: newEmail.trim(),
+      permission_level: newRole
+    })
+
+    if (error) {
+      setMsg(error.message.includes('unique') ? 'User already added.' : error.message)
+    } else {
+      setMsg('')
+      setNewEmail('')
+      fetchSettings()
+    }
+  }
+
+  const removeUser = async (email: string) => {
+    await supabase.from('document_permissions')
+      .delete()
+      .eq('document_id', documentId)
+      .eq('user_email', email)
+    fetchSettings()
+  }
+
+  return (
+    <div className="dashboard-overlay">
+      <div className="dashboard-modal" style={{ width: '400px' }}>
+        <div className="dashboard-header">
+          <h2>Share Document</h2>
+          <button onClick={onClose} className="dashboard-close">Close</button>
+        </div>
+
+        {loading ? <p>Loading settings...</p> : (
+          <>
+            {/* Public Link Toggle */}
+            <div style={{ marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '1px solid #333' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={isPublic} 
+                  onChange={togglePublic} 
+                  style={{ width: '20px', height: '20px' }}
+                />
+                <span>
+                  <strong>Public Link</strong>
+                  <div style={{ fontSize: '0.8rem', color: '#666' }}>
+                    Anyone with the link can view
+                  </div>
+                </span>
+              </label>
+            </div>
+
+            {/* Invite Form */}
+            <form onSubmit={inviteUser} style={{ display: 'flex', gap: '8px', marginBottom: '2rem' }}>
+              <input 
+                className="dashboard-input"
+                type="email" 
+                placeholder="user@example.com" 
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                required
+              />
+              <select 
+                className="dashboard-input" 
+                style={{ flex: '0 0 80px' }}
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as any)}
+              >
+                <option value="viewer">View</option>
+                <option value="editor">Edit</option>
+              </select>
+              <button type="submit" className="dashboard-create-btn">Add</button>
+            </form>
+            {msg && <p className="auth-error" style={{ fontSize: '0.9rem', marginTop: '-1rem' }}>{msg}</p>}
+
+            {/* Collaborator List */}
+            <div className="dashboard-list">
+              <h3 style={{ fontSize: '1rem', margin: '0 0 10px 0', color: '#888' }}>Collaborators</h3>
+              {permissions.length === 0 && <p style={{ color: '#555', fontStyle: 'italic' }}>No specific people invited.</p>}
+              
+              {permissions.map(p => (
+                <div key={p.id} className="dashboard-item" style={{ cursor: 'default' }}>
+                  <div className="item-meta">
+                    <div className="item-title" style={{ fontSize: '0.95rem' }}>{p.user_email}</div>
+                    <div className="item-date">{p.permission_level}</div>
+                  </div>
+                  <button 
+                    className="item-delete-btn" 
+                    onClick={() => removeUser(p.user_email)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 
