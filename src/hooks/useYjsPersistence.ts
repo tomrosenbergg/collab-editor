@@ -106,8 +106,9 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
 
         setStatus('saving')
         try {
-          const merged = Y.mergeUpdates(pendingUpdates.current)
-          pendingUpdates.current = []
+          const batch = pendingUpdates.current.slice()
+          if (batch.length === 0) return
+          const merged = Y.mergeUpdates(batch)
 
           const hex = Array.from(merged)
             .map((b) => b.toString(16).padStart(2, '0'))
@@ -119,6 +120,8 @@ export const useYjsPersistence = (supabase: SupabaseClient<Database>, doc: Y.Doc
           })
 
           if (error) throw error
+
+          pendingUpdates.current = pendingUpdates.current.slice(batch.length)
 
           updatesSinceCompact.current += 1
           if (updatesSinceCompact.current >= 50) {
