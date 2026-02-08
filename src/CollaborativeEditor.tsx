@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { SupabaseProvider } from './SupabaseProvider'
 import { useYjsPersistence } from './hooks/useYjsPersistence'
-import { EditorState } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { getEditorExtensions } from './editor/getEditorExtensions'
 import { fetchDocumentMeta, fetchPermissionForUser } from './data/documents'
+import { useEditorSetup } from './editor/useEditorSetup'
 
 interface Props {
   documentId: string
@@ -122,38 +119,17 @@ export const CollaborativeEditor = ({
     }
   }, [doc, documentId, isReadOnly, permissionLoaded, accessDenied, saveDocument, cancelSave])
 
-  // 3. Initialize Editor
-  useEffect(() => {
-    if (!permissionLoaded || accessDenied) return; 
-
-    const provider = new SupabaseProvider(doc, supabase, documentId)
-    const ytext = doc.getText('codemirror')
-
-    // Set User Awareness Color/Name
-    provider.awareness.setLocalStateField('user', {
-      name: currentUserEmail?.split('@')[0] || 'Anonymous',
-      color: '#30bced', // You could randomize this per user
-    })
-
-    const state = EditorState.create({
-      doc: ytext.toString(),
-      extensions: getEditorExtensions({
-        isReadOnly,
-        ytext,
-        awareness: provider.awareness,
-      }),
-    })
-
-    const view = new EditorView({ state, parent: editorRef.current! })
-
-    // Load initial content
-    loadDocument(documentId)
-
-    return () => {
-      view.destroy()
-      provider.destroy()
-    }
-  }, [documentId, supabase, doc, permissionLoaded, isReadOnly, accessDenied])
+  useEditorSetup({
+    editorRef,
+    doc,
+    supabase,
+    documentId,
+    currentUserEmail,
+    isReadOnly,
+    permissionLoaded,
+    accessDenied,
+    loadDocument,
+  })
 
   // --- Render States ---
 

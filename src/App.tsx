@@ -5,6 +5,7 @@ import { Auth } from './Auth'
 import { Dashboard } from './Dashboard'
 import { Menu } from './Menu'
 import { ShareModal } from './ShareModal'
+import { ErrorBoundary } from './ui/ErrorBoundary'
 import './App.css'
 
 const supabase = createClient(
@@ -102,14 +103,16 @@ function App() {
 
       {/* Editor */}
       {currentDocId ? (
-        <CollaborativeEditor 
-          key={currentDocId} 
-          documentId={currentDocId} 
-          supabase={supabase} 
-          currentUserEmail={session?.user?.email}
-          onSetIsOwner={setIsCurrentDocOwner}
-          onAuthRequired={() => setAuthRequired(true)} // <--- TRIGGER LOGIN
-        />
+        <ErrorBoundary>
+          <CollaborativeEditor 
+            key={currentDocId} 
+            documentId={currentDocId} 
+            supabase={supabase} 
+            currentUserEmail={session?.user?.email}
+            onSetIsOwner={setIsCurrentDocOwner}
+            onAuthRequired={() => setAuthRequired(true)} // <--- TRIGGER LOGIN
+          />
+        </ErrorBoundary>
       ) : (
         <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
            <button 

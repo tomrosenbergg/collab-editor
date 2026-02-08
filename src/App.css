@@ -254,6 +254,42 @@ body {
 }
 
 /* =========================================
+   TOASTS
+   ========================================= */
+.toast-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 200;
+}
+
+.toast {
+  background: #1f232b;
+  border: 1px solid #2b313a;
+  color: #e6e6e6;
+  padding: 10px 14px;
+  border-radius: 10px;
+  min-width: 220px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  font-size: 0.9rem;
+}
+
+.toast-error {
+  border-color: #5f2e2e;
+  background: #2a1717;
+  color: #ffb3b3;
+}
+
+.toast-success {
+  border-color: #2d5f3a;
+  background: #18241c;
+  color: #a3e6b1;
+}
+
+/* =========================================
    DASHBOARD (MODAL)
    ========================================= */
 .dashboard-overlay {

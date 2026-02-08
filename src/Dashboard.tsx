@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Screenplay } from './types'
 import { createDocument, deleteDocument, fetchDocuments, updateDocumentTitle } from './data/documents'
+import { useToast } from './ui/Toast'
 
 interface Props {
   supabase: SupabaseClient
@@ -18,6 +19,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
   const [newTitle, setNewTitle] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const { addToast } = useToast()
 
   useEffect(() => {
     fetchDocs()
@@ -29,6 +31,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
       setDocs(data)
     } catch {
       setDocs([])
+      addToast('Failed to load documents.', 'error')
     }
     setLoading(false)
   }
@@ -42,7 +45,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
       const data = await createDocument(supabase, newTitle, userId)
       onOpenDocument(data.id)
     } catch {
-      return
+      addToast('Failed to create document.', 'error')
     }
   }
 
@@ -53,7 +56,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
       await deleteDocument(supabase, id)
       fetchDocs()
     } catch {
-      return
+      addToast('Failed to delete document.', 'error')
     }
   }
 
@@ -71,7 +74,7 @@ export const Dashboard = ({ supabase, userId, onOpenDocument, onShare, onClose }
       setEditingId(null)
       fetchDocs()
     } catch {
-      return
+      addToast('Failed to rename document.', 'error')
     }
   }
 

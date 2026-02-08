@@ -9,6 +9,7 @@ import {
   setPublicRole,
   updatePermission as updatePermissionLevel,
 } from './data/documents'
+import { useToast } from './ui/Toast'
 
 interface Props {
   supabase: SupabaseClient
@@ -26,6 +27,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [copyBtnText, setCopyBtnText] = useState('Copy link')
+  const { addToast } = useToast()
 
   const shareUrl = `${window.location.origin}${window.location.pathname}?id=${documentId}`
 
@@ -51,6 +53,7 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
       setPermissions(perms)
     } catch {
       setPermissions([])
+      addToast('Failed to load sharing settings.', 'error')
     }
     setLoading(false)
   }
@@ -60,10 +63,18 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
     const newVal = e.target.value
     if (newVal === 'restricted') {
       setIsPublic(false)
-      await setPublicAccess(supabase, documentId, false)
+      try {
+        await setPublicAccess(supabase, documentId, false)
+      } catch {
+        addToast('Failed to update access.', 'error')
+      }
     } else {
       setIsPublic(true)
-      await setPublicAccess(supabase, documentId, true)
+      try {
+        await setPublicAccess(supabase, documentId, true)
+      } catch {
+        addToast('Failed to update access.', 'error')
+      }
     }
   }
 
@@ -71,7 +82,11 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
   const handlePublicRoleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newRole = e.target.value as 'viewer' | 'editor'
     setPublicRole(newRole)
-    await setPublicRole(supabase, documentId, newRole)
+    try {
+      await setPublicRole(supabase, documentId, newRole)
+    } catch {
+      addToast('Failed to update public role.', 'error')
+    }
   }
 
   const inviteUser = async (e: React.FormEvent) => {
@@ -96,13 +111,21 @@ export const ShareModal = ({ supabase, documentId, currentUserEmail, onClose }: 
   }
 
   const updatePermission = async (email: string, newLevel: 'viewer' | 'editor') => {
-    await updatePermissionLevel(supabase, documentId, email, newLevel)
-    fetchSettings()
+    try {
+      await updatePermissionLevel(supabase, documentId, email, newLevel)
+      fetchSettings()
+    } catch {
+      addToast('Failed to update permission.', 'error')
+    }
   }
 
   const removeUser = async (email: string) => {
-    await removePermissionUser(supabase, documentId, email)
-    fetchSettings()
+    try {
+      await removePermissionUser(supabase, documentId, email)
+      fetchSettings()
+    } catch {
+      addToast('Failed to remove user.', 'error')
+    }
   }
 
   const copyLink = () => {
